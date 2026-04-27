@@ -50,9 +50,9 @@ export default async function DashboardPage({
       <h1 className="mb-2 text-2xl font-semibold">{t.title}</h1>
       <p className="mb-6 text-sm text-zinc-600">{t.subtitle}</p>
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200/80 bg-white/95 shadow-lg shadow-violet-100/30">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-zinc-100 text-zinc-700">
+          <thead className="bg-[var(--primary-soft)] text-violet-900">
             <tr>
               <th className="px-3 py-2">{t.dt}</th>
               <th className="px-3 py-2">{t.customer}</th>
@@ -71,7 +71,10 @@ export default async function DashboardPage({
               </tr>
             )}
             {bookings.map((booking) => (
-              <tr key={booking.id} className="border-t border-zinc-100">
+              <tr
+                key={booking.id}
+                className="border-t border-zinc-100 transition-colors hover:bg-violet-50/40"
+              >
                 <td className="px-3 py-2">
                   {format(booking.startsAt, "PPP p", { locale: dateFnsLocale })}
                 </td>
@@ -79,7 +82,9 @@ export default async function DashboardPage({
                 <td className="px-3 py-2">{booking.customer.phoneE164}</td>
                 <td className="px-3 py-2">{booking.service.name}</td>
                 <td className="px-3 py-2">{booking.staff.name}</td>
-                <td className="px-3 py-2">{booking.status}</td>
+                <td className="px-3 py-2">
+                  <span className={statusClass(booking.status)}>{booking.status}</span>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -87,4 +92,16 @@ export default async function DashboardPage({
       </div>
     </div>
   );
+}
+
+function statusClass(status: string) {
+  if (status === "CONFIRMED") {
+    return "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700";
+  }
+
+  if (status === "CANCELLED") {
+    return "inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700";
+  }
+
+  return "inline-flex rounded-full border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700";
 }
