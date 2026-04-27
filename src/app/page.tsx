@@ -43,43 +43,43 @@ export default async function Home({
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-4 py-10">
-      <main className="grid w-full gap-4 rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm md:grid-cols-2">
+      <main className="grid w-full gap-4 rounded-3xl border border-zinc-200/80 bg-white/90 p-8 shadow-lg shadow-violet-100/40 backdrop-blur-sm md:grid-cols-2">
         <div>
           <div className="mb-4 flex items-center gap-2 text-xs">
             <span className="text-zinc-500">{t.langLabel}:</span>
             <Link
               href="/?lang=el"
-              className={`rounded-md px-2 py-1 ${lang === "el" ? "bg-black text-white" : "border border-zinc-300"}`}
+              className={`rounded-md px-2 py-1 transition ${lang === "el" ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700" : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"}`}
             >
               {t.greek}
             </Link>
             <Link
               href="/?lang=en"
-              className={`rounded-md px-2 py-1 ${lang === "en" ? "bg-black text-white" : "border border-zinc-300"}`}
+              className={`rounded-md px-2 py-1 transition ${lang === "en" ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700" : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"}`}
             >
               {t.english}
             </Link>
           </div>
-          <p className="mb-2 text-sm text-zinc-500">
+          <p className="mb-2 inline-flex rounded-full bg-[var(--primary-soft)] px-3 py-1 text-xs font-medium text-violet-700">
             QR -&gt; Chat -&gt; Book -&gt; SMS
           </p>
-          <h1 className="mb-3 text-3xl font-semibold">{t.title}</h1>
-          <p className="mb-6 text-sm text-zinc-700">{t.subtitle}</p>
+          <h1 className="mb-3 text-3xl font-semibold tracking-tight">{t.title}</h1>
+          <p className="mb-6 max-w-md text-sm leading-6 text-zinc-700">{t.subtitle}</p>
           <Link
             href={`/chat?lang=${lang}`}
-            className="inline-block rounded-xl bg-black px-4 py-2 text-sm font-medium text-white"
+            className="inline-block rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-violet-300/70 transition hover:bg-[var(--primary-hover)]"
           >
             {t.startChat}
           </Link>
           <Link
             href={`/dashboard?lang=${lang}`}
-            className="ml-2 inline-block rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium"
+            className="ml-2 inline-block rounded-xl border border-violet-200 bg-[var(--primary-soft)] px-4 py-2 text-sm font-medium text-violet-700 transition hover:border-violet-300 hover:text-violet-800"
           >
             {t.openDashboard}
           </Link>
         </div>
-        <div className="rounded-2xl bg-zinc-100 p-4 text-sm text-zinc-700">
-          <p className="mb-2 font-medium">{t.quickView}</p>
+        <div className="rounded-2xl border border-violet-100 bg-[var(--primary-soft)] p-4 text-sm text-zinc-700">
+          <p className="mb-2 font-semibold text-violet-800">{t.quickView}</p>
           <ul className="space-y-1">
             <li>{t.q1}</li>
             <li>{t.q2}</li>

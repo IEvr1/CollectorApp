@@ -27,6 +27,12 @@ export default function ChatPage() {
           slots: "Διαθέσιμες ώρες:",
           noSlots: "Δεν υπάρχουν διαθέσιμες ώρες για αυτή την επιλογή.",
           details: "Τέλεια. Επιβεβαιώστε τα στοιχεία σας.",
+          flowLabel: "Ροή κράτησης",
+          stepService: "Υπηρεσία",
+          stepStaff: "Staff",
+          stepDate: "Ημ/νία",
+          stepTime: "Ώρα",
+          stepDetails: "Στοιχεία",
           namePh: "Ονοματεπώνυμο",
           phonePh: "Κυπριακό κινητό (+3579XXXXXXX)",
           bookingSummary: "Σύνοψη κράτησης",
@@ -50,6 +56,12 @@ export default function ChatPage() {
           slots: "Available time slots:",
           noSlots: "No slots currently available for this selection.",
           details: "Great. Please confirm your details.",
+          flowLabel: "Booking flow",
+          stepService: "Service",
+          stepStaff: "Staff",
+          stepDate: "Date",
+          stepTime: "Time",
+          stepDetails: "Details",
           namePh: "Full name",
           phonePh: "Cyprus mobile (+3579XXXXXXX)",
           bookingSummary: "Booking summary",
@@ -81,6 +93,9 @@ export default function ChatPage() {
     return new URLSearchParams(window.location.search).get("phone") ?? "";
   });
   const [result, setResult] = useState("");
+  const [resultTone, setResultTone] = useState<"success" | "error" | "neutral">(
+    "neutral",
+  );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -117,11 +132,13 @@ export default function ChatPage() {
   async function bookNow() {
     if (!serviceId || !staffId || !slot || !name || !phone) {
       setResult(t.missing);
+      setResultTone("error");
       return;
     }
 
     setBusy(true);
     setResult("");
+    setResultTone("neutral");
     const response = await fetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -138,11 +155,13 @@ export default function ChatPage() {
     const data = await response.json();
     if (!response.ok) {
       setResult(data.error ?? t.failed);
+      setResultTone("error");
       setBusy(false);
       return;
     }
 
     setResult(`${t.success} ${data.manageUrl}`);
+    setResultTone("success");
     setBusy(false);
   }
 
@@ -153,22 +172,38 @@ export default function ChatPage() {
         <button
           type="button"
           onClick={() => setLocale("el")}
-          className={`rounded-md px-2 py-1 ${locale === "el" ? "bg-black text-white" : "border border-zinc-300"}`}
+          className={`rounded-md px-2 py-1 transition ${
+            locale === "el"
+              ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700"
+              : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"
+          }`}
         >
           {t.greek}
         </button>
         <button
           type="button"
           onClick={() => setLocale("en")}
-          className={`rounded-md px-2 py-1 ${locale === "en" ? "bg-black text-white" : "border border-zinc-300"}`}
+          className={`rounded-md px-2 py-1 transition ${
+            locale === "en"
+              ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700"
+              : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"
+          }`}
         >
           {t.english}
         </button>
       </div>
       <h1 className="mb-1 text-2xl font-semibold">{t.title}</h1>
       <p className="mb-6 text-sm text-zinc-600">{t.subtitle}</p>
+      <BookingProgress
+        t={t}
+        serviceSelected={Boolean(serviceId)}
+        staffSelected={Boolean(staffId)}
+        dateSelected={Boolean(date)}
+        slotSelected={Boolean(slot)}
+        detailsReady={Boolean(name && phone)}
+      />
 
-      <div className="grid gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="grid gap-4 rounded-2xl border border-zinc-200/80 bg-white/95 p-4 shadow-lg shadow-violet-100/30">
         <Bubble role="assistant" text={t.welcome} />
         <CardGrid>
           {services.map((item) => (
@@ -203,7 +238,7 @@ export default function ChatPage() {
           value={date}
           onChange={(event) => setDate(event.target.value)}
           type="date"
-          className="w-fit rounded-xl border border-zinc-300 px-3 py-2 text-sm"
+          className="w-fit rounded-xl border border-zinc-300 px-3 py-2 text-sm transition focus:border-violet-300"
         />
 
         <Bubble role="assistant" text={t.slots} />
@@ -234,18 +269,18 @@ export default function ChatPage() {
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={t.namePh}
-            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm"
+            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm transition focus:border-violet-300"
           />
           <input
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
             placeholder={t.phonePh}
-            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm"
+            className="rounded-xl border border-zinc-300 px-3 py-2 text-sm transition focus:border-violet-300"
           />
         </div>
 
-        <div className="rounded-xl bg-zinc-100 p-3 text-sm">
-          <p className="font-medium">{t.bookingSummary}</p>
+        <div className="rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800">
+          <p className="font-semibold text-violet-800">{t.bookingSummary}</p>
           <p>
             {t.service}: {selectedService?.name ?? "-"}
           </p>
@@ -258,13 +293,19 @@ export default function ChatPage() {
           type="button"
           onClick={() => void bookNow()}
           disabled={busy}
-          className="w-fit rounded-xl bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="w-fit rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-violet-300/70 transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? t.booking : t.bookNow}
         </button>
 
         {result && (
-          <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p
+            className={`rounded-xl border px-3 py-2 text-sm ${
+              resultTone === "error"
+                ? "border-red-200 bg-[var(--error-soft)] text-[var(--error-text)]"
+                : "border-emerald-200 bg-[var(--success-soft)] text-[var(--success-text)]"
+            }`}
+          >
             {result}
           </p>
         )}
@@ -278,8 +319,8 @@ function Bubble({ role, text }: { role: "assistant" | "user"; text: string }) {
     <div
       className={`w-fit max-w-[85%] rounded-2xl px-4 py-2 text-sm ${
         role === "assistant"
-          ? "bg-zinc-100 text-zinc-800"
-          : "ml-auto bg-black text-white"
+          ? "border border-zinc-200 bg-zinc-100 text-zinc-800"
+          : "ml-auto bg-[var(--primary)] text-white"
       }`}
     >
       {text}
@@ -294,7 +335,60 @@ function CardGrid({ children }: { children: React.ReactNode }) {
 function choiceClass(selected: boolean) {
   return `rounded-xl border px-3 py-2 text-left text-sm transition ${
     selected
-      ? "border-black bg-black text-white"
-      : "border-zinc-300 bg-white hover:border-zinc-500"
+      ? "border-violet-300 bg-[var(--primary-soft)] text-violet-900 ring-2 ring-violet-200"
+      : "border-zinc-300 bg-white hover:border-violet-300 hover:bg-violet-50/40"
   }`;
+}
+
+function BookingProgress({
+  t,
+  serviceSelected,
+  staffSelected,
+  dateSelected,
+  slotSelected,
+  detailsReady,
+}: {
+  t: {
+    flowLabel: string;
+    stepService: string;
+    stepStaff: string;
+    stepDate: string;
+    stepTime: string;
+    stepDetails: string;
+  };
+  serviceSelected: boolean;
+  staffSelected: boolean;
+  dateSelected: boolean;
+  slotSelected: boolean;
+  detailsReady: boolean;
+}) {
+  const steps = [
+    { label: t.stepService, done: serviceSelected },
+    { label: t.stepStaff, done: staffSelected },
+    { label: t.stepDate, done: dateSelected },
+    { label: t.stepTime, done: slotSelected },
+    { label: t.stepDetails, done: detailsReady },
+  ];
+
+  return (
+    <div className="mb-5">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        {t.flowLabel}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {steps.map((step) => (
+          <span
+            key={step.label}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              step.done
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-zinc-200 bg-white text-zinc-500"
+            }`}
+          >
+            {step.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
