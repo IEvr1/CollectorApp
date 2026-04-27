@@ -1,0 +1,138 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model Salon {
+  id        String    @id @default(cuid())
+  name      String
+  timezone  String    @default("Europe/Nicosia")
+  createdAt DateTime  @default(now())
+  services  Service[]
+  staff     Staff[]
+  customers Customer[]
+  bookings  Booking[]
+  sessions  ConversationSession[]
+  smsTokens SmsLinkToken[]
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  salonId     String
+  name        String
+  durationMin Int
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  bookings    Booking[]
+}
+
+model Staff {
+  id         String              @id @default(cuid())
+  salonId    String
+  name       String
+  calendarId String?
+  active     Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  salon      Salon               @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+  slots      StaffAvailability[]
+}
+
+model StaffAvailability {
+  id        String   @id @default(cuid())
+  staffId   String
+  weekday   Int
+  startHour Int
+  endHour   Int
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  salonId    String
+  name       String
+  phoneE164  String
+  createdAt  DateTime @default(now())
+  salon      Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  bookings   Booking[]
+  sessions   ConversationSession[]
+
+  @@unique([salonId, phoneE164])
+}
+
+model Booking {
+  id         String        @id @default(cuid())
+  salonId    String
+  customerId String
+  serviceId  String
+  staffId    String
+  startsAt   DateTime
+  endsAt     DateTime
+  googleEventId String?
+  status     BookingStatus @default(CONFIRMED)
+  notes      String?
+  createdAt  DateTime      @default(now())
+  salon      Salon         @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service    Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff      Staff         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  smsTokens  SmsLinkToken[]
+  reminders  BookingReminder[]
+
+  @@index([salonId, staffId, startsAt])
+}
+
+model ConversationSession {
+  id         String   @id @default(cuid())
+  salonId    String
+  customerId String?
+  state      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  salon      Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+}
+
+model SmsLinkToken {
+  id         String    @id @default(cuid())
+  salonId    String
+  bookingId  String?
+  phoneE164  String
+  tokenHash  String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  salon      Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  booking    Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([salonId, phoneE164])
+}
+
+model BookingReminder {
+  id        String   @id @default(cuid())
+  bookingId String
+  sendAt    DateTime
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([sendAt, sentAt])
+  @@index([bookingId, sendAt])
+}

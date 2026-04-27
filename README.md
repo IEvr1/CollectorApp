@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Beauty Salon Booking MVP
 
-## Getting Started
+QR -> chat booking flow for a single salon app, with multi-staff scheduling and SMS manage links.
 
-First, run the development server:
+## Features included
+
+- ChatGPT-like booking page with card/list selectors for service, staff, and time.
+- Booking API that requires name + phone before confirmation.
+- SMS confirmation flow with deep link token (`/r/:token`) for returning users.
+- Simple manager dashboard table for all bookings across staff.
+- Prisma schema covering salons, services, staff, availability, customers, bookings, sessions, and SMS tokens.
+
+## Setup
+
+0. Create a PostgreSQL database (local or hosted) and set `DATABASE_URL` in `.env`.
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Copy environment file:
+
+```bash
+copy .env.example .env
+```
+
+3. Run database migration:
+
+```bash
+npx prisma migrate dev --name init
+```
+
+4. Generate Prisma client:
+
+```bash
+npx prisma generate
+```
+
+5. Start app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Pages
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `/` landing page
+- `/chat` customer booking chat
+- `/dashboard` manager booking table
+- `/r/:token` returning customer deep-link resolver
 
-## Learn More
+## Notes
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- UI language defaults to Greek, with optional English via `?lang=en` and in-page language switch.
+- Business locale defaults to Cyprus (`Europe/Nicosia` timezone).
+- Booking accepts Cyprus mobile numbers only (`+3579XXXXXXX` or local `9XXXXXXX`) to ensure SMS deliverability.
+- Twilio sender can be either `TWILIO_ALPHA_SENDER_ID` (preferred when supported) or `TWILIO_PHONE_NUMBER`.
+- If Twilio credentials or sender are not set, SMS is logged to server console (dev fallback).
+- Google Calendar integration:
+  - Set `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` in `.env`.
+  - Share each staff calendar with the service account email.
+  - Save each staff calendar ID in `Staff.calendarId` (e.g. `aisha@group.calendar.google.com`).
+  - Quick assign command:
+    - `npm run set:staff-calendars -- "Aisha=aisha@group.calendar.google.com" "Mona=mona@group.calendar.google.com" "Sara=sara@group.calendar.google.com"`
+  - Availability excludes busy ranges from each staff calendar, and confirmed bookings create events in that same calendar.
+- Reminder policy:
+  - If appointment is less than 2h30m away, no reminder is sent.
+  - If appointment is from 2h30m to less than 24h away, one reminder is sent at 2h30m before.
+  - If appointment is 24h+ away, two reminders are sent (24h before and 2h30m before).
+- Trigger reminders via `POST /api/reminders/dispatch` (call from cron). Optional guard: `REMINDER_DISPATCH_SECRET` header `x-reminder-secret`.
+- `vercel.json` includes a cron schedule `0,45 * * * *` to run reminder checks at minute 0 and 45 every hour.
+- Seed data is inserted automatically when API/pages run for the first time.
