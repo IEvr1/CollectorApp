@@ -76,3 +76,39 @@ Salon_booking/
 - **API paths:** πόρος + HTTP method + body semantics — π.χ. `POST /api/bookings`, `POST /api/chat/message`.
 - **Συναρτήσεις:** `verbNoun` (π.χ. `ensureSalonSeed`, `dispatchReminders`).
 - **Prisma models:** PascalCase singular (`Booking`, `Staff`).
+
+## 
+
+MVP: Τι να κρατήσεις / τι να κόψεις
+Κράτα (must-have):
+
+service/staff/date/time selection σε mobile-friendly UI
+booking confirmation με SMS
+manage/reschedule/cancel από deep link (/r/:token)
+basic dashboard για ιδιοκτήτη (ημέρα, staff, status)
+σύγκρουση ραντεβού + κανόνες διαθεσιμότητας
+
+Κόψε για αργότερα (nice-to-have):
+πλήρες AI chat/NLU
+loyalty program
+advanced analytics
+multi-branch / franchise complex features
+πολύπλοκα roles/permissions
+
+Προτεινόμενο Positioning (για να μη μοιάζει “άλλο ένα”)
+“Book in 30 seconds from WhatsApp/SMS.”
+“Fewer no-shows, fuller calendars.”
+“Built for small salons, not enterprise chains.”
+
+30-ημερών Go-to-Market πλάνο (lean)
+Εβδομάδα 1: 3 pilot salons, δωρεάν onboarding, baseline metrics (bookings/week, no-show %)
+Εβδομάδα 2: reminders + one-tap reschedule, μέτρηση impact
+Εβδομάδα 3: waitlist/cancellation fill, μικρές UX βελτιώσεις από feedback
+Εβδομάδα 4: paid pilot (χαμηλό monthly), case study με 1-2 salons
+
+KPI που έχουν νόημα από νωρίς
+booking completion rate
+no-show rate
+reschedule success rate
+time-to-book (δευτερόλεπτα)
+repeat customer booking rate

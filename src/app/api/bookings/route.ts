@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
-import { normalizePhone } from "@/lib/booking";
+import { normalizePhone } from "@/lib/phone";
 import { createGoogleCalendarEvent, listGoogleBusyRanges } from "@/lib/google-calendar";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
@@ -99,7 +99,10 @@ export async function POST(request: Request) {
   try {
     phoneE164 = normalizePhone(payload.phone);
   } catch {
-    return NextResponse.json({ error: t.invalidPhone }, { status: 400 });
+    return NextResponse.json(
+      { error: t.invalidPhone, code: "INVALID_PHONE" },
+      { status: 400 },
+    );
   }
 
   const customer = await prisma.customer.upsert({
