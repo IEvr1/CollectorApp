@@ -1,9 +1,18 @@
 import { google } from "googleapis";
 
-type BusyRange = {
+export type BusyRange = {
   start: Date;
   end: Date;
 };
+
+/** When ok is false, callers must fail closed (do not treat as empty availability). */
+export type FreeBusyResult =
+  | { ok: true; busy: BusyRange[] }
+  | { ok: false; busy: BusyRange[]; reason: string };
+
+export type CalendarEventResult =
+  | { ok: true; eventId: string | null }
+  | { ok: false; eventId: null; reason: string };
 
 function getGoogleCalendarClient() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -26,14 +35,18 @@ export async function listGoogleBusyRanges(params: {
   calendarId?: string | null;
   timeMin: Date;
   timeMax: Date;
-}) {
+}): Promise<FreeBusyResult> {
   if (!params.calendarId) {
-    return [] as BusyRange[];
+    return { ok: true, busy: [] };
   }
 
   const calendar = getGoogleCalendarClient();
   if (!calendar) {
-    return [] as BusyRange[];
+    return {
+      ok: false,
+      busy: [],
+      reason: "Google Calendar is not configured but staff has a calendar ID",
+    };
   }
 
   try {
@@ -46,15 +59,16 @@ export async function listGoogleBusyRanges(params: {
     });
 
     const busy = response.data.calendars?.[params.calendarId]?.busy ?? [];
-    return busy
+    const ranges = busy
       .filter((item) => item.start && item.end)
       .map((item) => ({
         start: new Date(item.start as string),
         end: new Date(item.end as string),
       }));
+    return { ok: true, busy: ranges };
   } catch (error) {
     console.error("Google Calendar freebusy failed", error);
-    return [] as BusyRange[];
+    return { ok: false, busy: [], reason: "Google Calendar freebusy request failed" };
   }
 }
 
@@ -64,14 +78,18 @@ export async function createGoogleCalendarEvent(params: {
   description?: string;
   start: Date;
   end: Date;
-}) {
+}): Promise<CalendarEventResult> {
   if (!params.calendarId) {
-    return null;
+    return { ok: true, eventId: null };
   }
 
   const calendar = getGoogleCalendarClient();
   if (!calendar) {
-    return null;
+    return {
+      ok: false,
+      eventId: null,
+      reason: "Google Calendar is not configured but staff has a calendar ID",
+    };
   }
 
   try {
@@ -85,9 +103,9 @@ export async function createGoogleCalendarEvent(params: {
       },
     });
 
-    return response.data.id ?? null;
+    return { ok: true, eventId: response.data.id ?? null };
   } catch (error) {
     console.error("Google Calendar event insert failed", error);
-    return null;
+    return { ok: false, eventId: null, reason: "Google Calendar event insert failed" };
   }
 }

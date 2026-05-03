@@ -50,7 +50,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - `/` landing page
 - `/chat` customer booking chat
-- `/dashboard` manager booking table
+- `/dashboard` manager booking table (HTTP Basic: set `DASHBOARD_AUTH_SECRET`; optional `DASHBOARD_AUTH_USER`, default `manager`)
 - `/r/:token` returning customer deep-link resolver
 
 ## Notes
@@ -71,6 +71,7 @@ Open [http://localhost:3000](http://localhost:3000).
   - If appointment is less than 2h30m away, no reminder is sent.
   - If appointment is from 2h30m to less than 24h away, one reminder is sent at 2h30m before.
   - If appointment is 24h+ away, two reminders are sent (24h before and 2h30m before).
-- Trigger reminders via `POST /api/reminders/dispatch` (call from cron). Optional guard: `REMINDER_DISPATCH_SECRET` header `x-reminder-secret`.
+- Trigger reminders via `POST /api/reminders/dispatch` (call from cron). In **production**, `REMINDER_DISPATCH_SECRET` is **required**; send it as header `x-reminder-secret` or as `Authorization: Bearer <secret>`. On Vercel, you can align `REMINDER_DISPATCH_SECRET` with project `CRON_SECRET` so scheduled invocations are authorized automatically.
 - `vercel.json` includes a cron schedule `0,45 * * * *` to run reminder checks at minute 0 and 45 every hour.
+- In **production**, set `SMS_LINK_SECRET` for signing deep-link JWTs (the app refuses to start token signing without it).
 - Seed data is inserted automatically when API/pages run for the first time.

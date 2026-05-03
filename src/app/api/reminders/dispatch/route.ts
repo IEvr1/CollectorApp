@@ -6,12 +6,43 @@ import { sendBookingSms } from "@/lib/sms";
 
 function isAuthorized(request: Request) {
   const expectedSecret = process.env.REMINDER_DISPATCH_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (process.env.NODE_ENV === "production") {
+    if (!expectedSecret) {
+      return false;
+    }
+    if (request.headers.get("x-reminder-secret") === expectedSecret) {
+      return true;
+    }
+    const auth = request.headers.get("authorization");
+    if (auth?.startsWith("Bearer ")) {
+      const token = auth.slice(7);
+      if (token === expectedSecret) {
+        return true;
+      }
+      if (cronSecret && token === cronSecret) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   if (!expectedSecret) {
     return true;
   }
 
-  const headerSecret = request.headers.get("x-reminder-secret");
-  return headerSecret === expectedSecret;
+  if (request.headers.get("x-reminder-secret") === expectedSecret) {
+    return true;
+  }
+  const auth = request.headers.get("authorization");
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7);
+    if (token === expectedSecret || (cronSecret && token === cronSecret)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function POST(request: Request) {
