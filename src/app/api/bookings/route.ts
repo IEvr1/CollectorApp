@@ -53,7 +53,7 @@ export async function POST(request: Request) {
           staffMissing: "Το staff δεν βρέθηκε.",
           slotUnavailable: "Η επιλεγμένη ώρα δεν είναι πλέον διαθέσιμη.",
           invalidPhone:
-            "Υποστηρίζονται μόνο κυπριακοί αριθμοί κινητού (π.χ. +3579XXXXXXX).",
+            "Βάλτε έγκυρο κυπριακό κινητό: 8 ψηφία (π.χ. 99XXXXXX χωρίς +357).",
           smsConfirmed: "Το ραντεβού σας επιβεβαιώθηκε για",
           smsWith: "με",
           smsManage: "Διαχείριση ραντεβού:",
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
           staffMissing: "Staff not found",
           slotUnavailable: "Selected slot is no longer available",
           invalidPhone:
-            "Only Cyprus mobile numbers are supported (e.g. +3579XXXXXXX).",
+            "Enter a valid Cyprus mobile: 8 digits (e.g. 99XXXXXX without +357).",
           smsConfirmed: "Your appointment is confirmed for",
           smsWith: "with",
           smsManage: "Manage booking:",

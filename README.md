@@ -57,8 +57,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - UI language defaults to Greek, with optional English via `?lang=en` and in-page language switch.
 - Business locale defaults to Cyprus (`Europe/Nicosia` timezone).
-- Booking accepts Cyprus mobile numbers only (`+3579XXXXXXX` or local `9XXXXXXX`) to ensure SMS deliverability.
-- Twilio sender can be either `TWILIO_ALPHA_SENDER_ID` (preferred when supported) or `TWILIO_PHONE_NUMBER`.
+- Booking accepts Cyprus mobile numbers as **8 digits** without `+357` (e.g. `99XXXXXX`, `96XXXXXX`); they are stored/SMS-sent as `+357…`. Twilio `From`: **`TWILIO_ALPHA_SENDER_ID` first**, then `TWILIO_PHONE_NUMBER` if alpha is unset; optional `TWILIO_MESSAGING_SERVICE_SID` overrides both. Alphanumeric senders must be registered for the destination or Twilio returns **21212**.
 - If Twilio credentials or sender are not set, SMS is logged to server console (dev fallback).
 - Google Calendar integration:
   - Set `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` in `.env`.
