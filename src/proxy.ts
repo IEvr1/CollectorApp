@@ -18,6 +18,11 @@ function parseBasicAuth(header: string | null): { user: string; pass: string } |
 }
 
 export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith("/dashboard")) {
+    return NextResponse.next();
+  }
+
   const secret = process.env.DASHBOARD_AUTH_SECRET?.trim();
   if (!secret) {
     return NextResponse.next();

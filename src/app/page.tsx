@@ -72,6 +72,7 @@ export default async function Home({
             {t.startChat}
           </Link>
           <Link
+            prefetch={false}
             href={`/dashboard?lang=${lang}`}
             className="ml-2 inline-block rounded-xl border border-violet-200 bg-[var(--primary-soft)] px-4 py-2 text-sm font-medium text-violet-700 transition hover:border-violet-300 hover:text-violet-800"
           >

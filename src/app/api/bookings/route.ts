@@ -57,6 +57,7 @@ export async function POST(request: Request) {
           smsConfirmed: "Το ραντεβού σας επιβεβαιώθηκε για",
           smsWith: "με",
           smsManage: "Διαχείριση ραντεβού:",
+          smsLinkNote: " (Προσωπικό link — μην προωθείτε.)",
           calendarUnavailable:
             "Η διαθεσιμότητα δεν μπορεί να επιβεβαιωθεί αυτή τη στιγμή. Δοκιμάστε ξανά.",
         }
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
           smsConfirmed: "Your appointment is confirmed for",
           smsWith: "with",
           smsManage: "Manage booking:",
+          smsLinkNote: " (Personal link — do not forward.)",
           calendarUnavailable:
             "Availability could not be verified right now. Please try again.",
         };
@@ -202,7 +204,7 @@ export async function POST(request: Request) {
       const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
       const message = `${t.smsConfirmed} ${format(startsAt, "PPP p", {
         locale: dateFnsLocale,
-      })} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}`;
+      })} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`;
 
       try {
         await sendBookingSms({ phoneE164, body: message });

@@ -74,7 +74,7 @@ async function runDispatch() {
     const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
     const message = `Reminder: your appointment is at ${format(booking.startsAt, "PPP p")} with ${
       booking.staff.name
-    }. Manage booking: ${manageUrl}`;
+    }. Manage booking: ${manageUrl} (personal link — do not forward.)`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });
     await prisma.bookingReminder.update({

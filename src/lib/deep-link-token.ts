@@ -11,7 +11,7 @@ type TokenPayload = {
   jti: string;
 };
 
-function tokenSecret() {
+export function smsLinkSigningSecret() {
   const secret = process.env.SMS_LINK_SECRET;
   if (process.env.NODE_ENV === "production") {
     if (!secret) {
@@ -24,7 +24,7 @@ function tokenSecret() {
 
 export async function createDeepLinkToken(payload: Omit<TokenPayload, "jti">) {
   const jti = crypto.randomUUID();
-  const signed = jwt.sign({ ...payload, jti }, tokenSecret(), {
+  const signed = jwt.sign({ ...payload, jti }, smsLinkSigningSecret(), {
     expiresIn: TOKEN_TTL_SECONDS,
   });
   const tokenHash = crypto.createHash("sha256").update(signed).digest("hex");
@@ -42,22 +42,18 @@ export async function createDeepLinkToken(payload: Omit<TokenPayload, "jti">) {
   return signed;
 }
 
+/** Validates SMS deep-link JWT and DB row. Does not consume the link — same URL may be opened until `expiresAt` (e.g. reminder SMS). */
 export async function verifyDeepLinkToken(token: string) {
-  const decoded = jwt.verify(token, tokenSecret()) as TokenPayload;
+  const decoded = jwt.verify(token, smsLinkSigningSecret()) as TokenPayload;
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const record = await prisma.smsLinkToken.findFirst({
-    where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+    where: { tokenHash, expiresAt: { gt: new Date() } },
   });
 
   if (!record) {
     throw new Error("Token invalid or expired");
   }
-
-  await prisma.smsLinkToken.update({
-    where: { id: record.id },
-    data: { usedAt: new Date() },
-  });
 
   return decoded;
 }

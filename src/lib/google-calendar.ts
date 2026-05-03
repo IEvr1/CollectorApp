@@ -109,3 +109,73 @@ export async function createGoogleCalendarEvent(params: {
     return { ok: false, eventId: null, reason: "Google Calendar event insert failed" };
   }
 }
+
+export type CalendarMutationResult = { ok: true } | { ok: false; reason: string };
+
+export async function deleteGoogleCalendarEvent(params: {
+  calendarId?: string | null;
+  eventId?: string | null;
+}): Promise<CalendarMutationResult> {
+  if (!params.calendarId || !params.eventId) {
+    return { ok: true };
+  }
+
+  const calendar = getGoogleCalendarClient();
+  if (!calendar) {
+    return { ok: false, reason: "Google Calendar is not configured" };
+  }
+
+  try {
+    await calendar.events.delete({
+      calendarId: params.calendarId,
+      eventId: params.eventId,
+    });
+    return { ok: true };
+  } catch (error: unknown) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? (error as { code?: number }).code
+        : undefined;
+    if (code === 404) {
+      return { ok: true };
+    }
+    console.error("Google Calendar event delete failed", error);
+    return { ok: false, reason: "Google Calendar event delete failed" };
+  }
+}
+
+export async function patchGoogleCalendarEvent(params: {
+  calendarId?: string | null;
+  eventId?: string | null;
+  summary?: string;
+  description?: string;
+  start: Date;
+  end: Date;
+}): Promise<CalendarMutationResult> {
+  if (!params.calendarId || !params.eventId) {
+    return { ok: true };
+  }
+
+  const calendar = getGoogleCalendarClient();
+  if (!calendar) {
+    return { ok: false, reason: "Google Calendar is not configured" };
+  }
+
+  try {
+    await calendar.events.patch({
+      calendarId: params.calendarId,
+      eventId: params.eventId,
+      requestBody: {
+        ...(params.summary !== undefined ? { summary: params.summary } : {}),
+        ...(params.description !== undefined ? { description: params.description } : {}),
+        start: { dateTime: params.start.toISOString() },
+        end: { dateTime: params.end.toISOString() },
+      },
+    });
+    return { ok: true };
+  } catch (error) {
+    console.error("Google Calendar event patch failed", error);
+    return { ok: false, reason: "Google Calendar event patch failed" };
+  }
+}
+
