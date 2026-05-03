@@ -42,6 +42,7 @@ export async function POST(request: Request) {
           staffId: selectedStaff.id,
           serviceDurationMin: service.durationMin,
           date: body.date,
+          timeZone: salon.timezone,
         })
       : [];
 
