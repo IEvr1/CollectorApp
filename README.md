@@ -71,6 +71,10 @@ Open [http://localhost:3000](http://localhost:3000).
   - If appointment is less than 2h30m away, no reminder is sent.
   - If appointment is from 2h30m to less than 24h away, one reminder is sent at 2h30m before.
   - If appointment is 24h+ away, two reminders are sent (24h before and 2h30m before).
-- Trigger reminders via `POST /api/reminders/dispatch` (call from cron). Optional guard: `REMINDER_DISPATCH_SECRET` header `x-reminder-secret`.
+- Trigger reminders via `GET` or `POST /api/reminders/dispatch` (Vercel Cron uses **GET**). Security (recommended in production):
+  - Set **`CRON_SECRET`** in Vercel: the platform sends `Authorization: Bearer <CRON_SECRET>` on cron invocations.
+  - Optionally set **`REMINDER_DISPATCH_SECRET`** to the same value and/or call manually with header `x-reminder-secret: <value>` or `Authorization: Bearer <value>`. If neither `CRON_SECRET` nor `REMINDER_DISPATCH_SECRET` is set, the route is **unauthenticated** (fine for local dev only).
 - `vercel.json` includes a cron schedule `0,45 * * * *` to run reminder checks at minute 0 and 45 every hour.
+- Optional **`DASHBOARD_AUTH_SECRET`**: when set, `/dashboard` requires HTTP Basic auth (username from **`DASHBOARD_AUTH_USER`** or default `admin`, password = secret).
+- **`SMS_LINK_SECRET`**: secret used to sign JWT deep links in SMS; must stay stable in production or old links break.
 - Seed data is inserted automatically when API/pages run for the first time.

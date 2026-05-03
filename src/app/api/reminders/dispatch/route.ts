@@ -4,21 +4,36 @@ import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
 
+/** Vercel cron sends `Authorization: Bearer ${CRON_SECRET}`. Manual calls can use the same Bearer or `x-reminder-secret`. */
 function isAuthorized(request: Request) {
-  const expectedSecret = process.env.REMINDER_DISPATCH_SECRET;
-  if (!expectedSecret) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  const reminderSecret = process.env.REMINDER_DISPATCH_SECRET?.trim();
+
+  if (!cronSecret && !reminderSecret) {
     return true;
   }
 
-  const headerSecret = request.headers.get("x-reminder-secret");
-  return headerSecret === expectedSecret;
-}
+  const auth = request.headers.get("authorization")?.trim();
+  const bearerMatch = auth?.match(/^Bearer\s+(.+)$/i);
+  const bearer = bearerMatch?.[1]?.trim();
 
-export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (cronSecret && bearer === cronSecret) {
+    return true;
+  }
+  if (reminderSecret && bearer === reminderSecret) {
+    return true;
+  }
+  if (reminderSecret) {
+    const headerSecret = request.headers.get("x-reminder-secret");
+    if (headerSecret === reminderSecret) {
+      return true;
+    }
   }
 
+  return false;
+}
+
+async function runDispatch() {
   const now = new Date();
   const reminders = await prisma.bookingReminder.findMany({
     where: { sentAt: null, sendAt: { lte: now } },
@@ -65,4 +80,18 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ processed: reminders.length, sent, skipped });
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return runDispatch();
+}
+
+export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return runDispatch();
 }
