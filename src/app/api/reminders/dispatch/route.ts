@@ -8,8 +8,13 @@ import { sendBookingSms } from "@/lib/sms";
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET?.trim();
   const reminderSecret = process.env.REMINDER_DISPATCH_SECRET?.trim();
+  const isProd = process.env.NODE_ENV === "production";
 
-  if (!cronSecret && !reminderSecret) {
+  if (isProd && !reminderSecret) {
+    return false;
+  }
+
+  if (!isProd && !cronSecret && !reminderSecret) {
     return true;
   }
 

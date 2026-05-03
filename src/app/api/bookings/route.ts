@@ -1,6 +1,7 @@
 import { addMinutes, format } from "date-fns";
 import { el, enGB } from "date-fns/locale";
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
@@ -14,15 +15,35 @@ import { sendBookingSms } from "@/lib/sms";
 const bookingSchema = z.object({
   serviceId: z.string(),
   staffId: z.string(),
-  startsAt: z.string(),
+  startsAt: z
+    .string()
+    .refine((s) => !Number.isNaN(new Date(s).getTime()), { message: "Invalid startsAt" })
+    .transform((s) => new Date(s)),
   name: z.string().min(2),
   phone: z.string().min(8),
   lang: z.string().optional(),
 });
 
+const MAX_SERIALIZATION_RETRIES = 5;
+
+function isSerializationFailure(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+}
+
 export async function POST(request: Request) {
   await ensureSalonSeed();
-  const payload = bookingSchema.parse(await request.json());
+
+  if (process.env.NODE_ENV === "production" && !process.env.SMS_LINK_SECRET) {
+    return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 });
+  }
+
+  let payload: z.infer<typeof bookingSchema>;
+  try {
+    payload = bookingSchema.parse(await request.json());
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
   const lang = parseLocale(payload.lang);
   const t =
     lang === "el"
@@ -36,6 +57,8 @@ export async function POST(request: Request) {
           smsConfirmed: "Το ραντεβού σας επιβεβαιώθηκε για",
           smsWith: "με",
           smsManage: "Διαχείριση ραντεβού:",
+          calendarUnavailable:
+            "Η διαθεσιμότητα δεν μπορεί να επιβεβαιωθεί αυτή τη στιγμή. Δοκιμάστε ξανά.",
         }
       : {
           noSalon: "No salon configured",
@@ -47,6 +70,8 @@ export async function POST(request: Request) {
           smsConfirmed: "Your appointment is confirmed for",
           smsWith: "with",
           smsManage: "Manage booking:",
+          calendarUnavailable:
+            "Availability could not be verified right now. Please try again.",
         };
   const dateFnsLocale = lang === "el" ? el : enGB;
 
@@ -55,40 +80,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t.noSalon }, { status: 500 });
   }
 
-  const service = await prisma.service.findUnique({ where: { id: payload.serviceId } });
-  if (!service) {
+  const service = await prisma.service.findUnique({
+    where: { id: payload.serviceId },
+  });
+  if (!service || service.salonId !== salon.id) {
     return NextResponse.json({ error: t.serviceMissing }, { status: 404 });
   }
 
   const staff = await prisma.staff.findUnique({
     where: { id: payload.staffId },
-    select: { id: true, name: true, calendarId: true },
+    select: { id: true, name: true, calendarId: true, salonId: true },
   });
-  if (!staff) {
+  if (!staff || staff.salonId !== salon.id) {
     return NextResponse.json({ error: t.staffMissing }, { status: 404 });
   }
 
-  const startsAt = new Date(payload.startsAt);
+  const startsAt = payload.startsAt;
   const endsAt = addMinutes(startsAt, service.durationMin);
-
-  const collision = await prisma.booking.findFirst({
-    where: {
-      staffId: payload.staffId,
-      status: { in: ["PENDING", "CONFIRMED"] },
-      startsAt: { lt: endsAt },
-      endsAt: { gt: startsAt },
-    },
-  });
-  if (collision) {
+  const now = new Date();
+  if (startsAt < now) {
     return NextResponse.json({ error: t.slotUnavailable }, { status: 409 });
   }
 
-  const googleBusyRanges = await listGoogleBusyRanges({
+  const freeBusy = await listGoogleBusyRanges({
     calendarId: staff.calendarId,
     timeMin: startsAt,
     timeMax: endsAt,
   });
-  const hasGoogleCollision = googleBusyRanges.some(
+  if (!freeBusy.ok) {
+    return NextResponse.json({ error: t.calendarUnavailable }, { status: 503 });
+  }
+  const hasGoogleCollision = freeBusy.busy.some(
     (busyRange) => startsAt < busyRange.end && endsAt > busyRange.start,
   );
   if (hasGoogleCollision) {
@@ -105,52 +127,106 @@ export async function POST(request: Request) {
     );
   }
 
-  const customer = await prisma.customer.upsert({
-    where: { salonId_phoneE164: { salonId: salon.id, phoneE164 } },
-    create: { salonId: salon.id, name: payload.name, phoneE164 },
-    update: { name: payload.name },
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_SERIALIZATION_RETRIES; attempt += 1) {
+    try {
+      const result = await prisma.$transaction(
+        async (tx) => {
+          const collision = await tx.booking.findFirst({
+            where: {
+              staffId: payload.staffId,
+              status: { in: ["PENDING", "CONFIRMED"] },
+              startsAt: { lt: endsAt },
+              endsAt: { gt: startsAt },
+            },
+          });
+          if (collision) {
+            return { type: "conflict" as const };
+          }
 
-  const booking = await prisma.booking.create({
-    data: {
-      salonId: salon.id,
-      customerId: customer.id,
-      serviceId: payload.serviceId,
-      staffId: payload.staffId,
-      startsAt,
-      endsAt,
-      status: "CONFIRMED",
-    },
-    include: { service: true, staff: true },
-  });
+          const customer = await tx.customer.upsert({
+            where: { salonId_phoneE164: { salonId: salon.id, phoneE164 } },
+            create: { salonId: salon.id, name: payload.name, phoneE164 },
+            update: { name: payload.name },
+          });
 
-  const googleEventId = await createGoogleCalendarEvent({
-    calendarId: staff.calendarId,
-    summary: `${booking.service.name} - ${customer.name}`,
-    description: `Phone: ${customer.phoneE164}`,
-    start: booking.startsAt,
-    end: booking.endsAt,
-  });
+          const booking = await tx.booking.create({
+            data: {
+              salonId: salon.id,
+              customerId: customer.id,
+              serviceId: payload.serviceId,
+              staffId: payload.staffId,
+              startsAt,
+              endsAt,
+              status: "CONFIRMED",
+            },
+            include: { service: true, staff: true },
+          });
 
-  if (googleEventId) {
-    await prisma.booking.update({
-      where: { id: booking.id },
-      data: { googleEventId },
-    });
+          return { type: "ok" as const, booking, customer };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+
+      if (result.type === "conflict") {
+        return NextResponse.json({ error: t.slotUnavailable }, { status: 409 });
+      }
+
+      const { booking, customer } = result;
+
+      const eventResult = await createGoogleCalendarEvent({
+        calendarId: staff.calendarId,
+        summary: `${booking.service.name} - ${customer.name}`,
+        description: `Phone: ${customer.phoneE164}`,
+        start: booking.startsAt,
+        end: booking.endsAt,
+      });
+
+      if (!eventResult.ok) {
+        await prisma.booking.delete({ where: { id: booking.id } });
+        return NextResponse.json({ error: t.calendarUnavailable }, { status: 503 });
+      }
+
+      if (eventResult.eventId) {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: { googleEventId: eventResult.eventId },
+        });
+      }
+
+      const token = await createDeepLinkToken({
+        salonId: salon.id,
+        phoneE164,
+        bookingId: booking.id,
+      });
+      const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
+      const message = `${t.smsConfirmed} ${format(startsAt, "PPP p", {
+        locale: dateFnsLocale,
+      })} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}`;
+
+      try {
+        await sendBookingSms({ phoneE164, body: message });
+      } catch (smsError) {
+        console.error("SMS send failed after booking created; rolling back booking", smsError);
+        await prisma.booking.delete({ where: { id: booking.id } }).catch(() => {});
+        return NextResponse.json(
+          { error: lang === "el" ? "Αποτυχία αποστολής SMS. Δοκιμάστε ξανά." : "SMS failed. Please try again." },
+          { status: 502 },
+        );
+      }
+
+      await scheduleBookingReminders({ bookingId: booking.id, startsAt: booking.startsAt });
+
+      return NextResponse.json({ bookingId: booking.id, manageUrl });
+    } catch (error) {
+      lastError = error;
+      if (isSerializationFailure(error)) {
+        continue;
+      }
+      throw error;
+    }
   }
 
-  const token = await createDeepLinkToken({
-    salonId: salon.id,
-    phoneE164,
-    bookingId: booking.id,
-  });
-  const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
-  const message = `${t.smsConfirmed} ${format(startsAt, "PPP p", {
-    locale: dateFnsLocale,
-  })} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}`;
-
-  await sendBookingSms({ phoneE164, body: message });
-  await scheduleBookingReminders({ bookingId: booking.id, startsAt: booking.startsAt });
-
-  return NextResponse.json({ bookingId: booking.id, manageUrl });
+  console.error("Booking transaction failed after retries", lastError);
+  return NextResponse.json({ error: t.slotUnavailable }, { status: 409 });
 }

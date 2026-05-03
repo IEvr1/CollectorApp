@@ -50,7 +50,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - `/` landing page
 - `/chat` customer booking chat
-- `/dashboard` manager booking table
+- `/dashboard` manager booking table (HTTP Basic: set `DASHBOARD_AUTH_SECRET`; optional `DASHBOARD_AUTH_USER`, default `manager`)
 - `/r/:token` returning customer deep-link resolver
 
 ## Notes
@@ -71,10 +71,8 @@ Open [http://localhost:3000](http://localhost:3000).
   - If appointment is less than 2h30m away, no reminder is sent.
   - If appointment is from 2h30m to less than 24h away, one reminder is sent at 2h30m before.
   - If appointment is 24h+ away, two reminders are sent (24h before and 2h30m before).
-- Trigger reminders via `GET` or `POST /api/reminders/dispatch` (Vercel Cron uses **GET**). Security (recommended in production):
-  - Set **`CRON_SECRET`** in Vercel: the platform sends `Authorization: Bearer <CRON_SECRET>` on cron invocations.
-  - Optionally set **`REMINDER_DISPATCH_SECRET`** to the same value and/or call manually with header `x-reminder-secret: <value>` or `Authorization: Bearer <value>`. If neither `CRON_SECRET` nor `REMINDER_DISPATCH_SECRET` is set, the route is **unauthenticated** (fine for local dev only).
+- Trigger reminders via `GET` or `POST /api/reminders/dispatch` (Vercel Cron uses **GET**). In **production**, **`REMINDER_DISPATCH_SECRET`** is **required** (otherwise dispatch returns 401). Set **`CRON_SECRET`** in Vercel so cron sends `Authorization: Bearer <CRON_SECRET>` (often the same value as `REMINDER_DISPATCH_SECRET`). Manual calls can use `x-reminder-secret` or `Authorization: Bearer` with either secret. In local dev, if neither secret is set, the route stays **unauthenticated** for convenience.
 - `vercel.json` includes a cron schedule `0,45 * * * *` to run reminder checks at minute 0 and 45 every hour.
-- Optional **`DASHBOARD_AUTH_SECRET`**: when set, `/dashboard` requires HTTP Basic auth (username from **`DASHBOARD_AUTH_USER`** or default `admin`, password = secret).
-- **`SMS_LINK_SECRET`**: secret used to sign JWT deep links in SMS; must stay stable in production or old links break.
+- Optional **`DASHBOARD_AUTH_SECRET`**: when set, only **`/dashboard`** uses HTTP Basic auth (`src/proxy.ts`; username from **`DASHBOARD_AUTH_USER`** or default `admin`). `/` and `/chat` stay public. The dashboard link on the home page uses **`prefetch={false}`** so the browser does not prompt for credentials until you navigate to `/dashboard`.
+- **`SMS_LINK_SECRET`**: required in **production** for signing deep-link JWTs in SMS; keep it stable across deploys or old links break.
 - Seed data is inserted automatically when API/pages run for the first time.

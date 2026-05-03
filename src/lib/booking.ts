@@ -1,14 +1,15 @@
-import { addMinutes, isBefore, set } from "date-fns";
+import { addMinutes, isAfter } from "date-fns";
 import { listGoogleBusyRanges } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
+import { weekdayInTimeZone, zonedWallTimeToUtc } from "@/lib/timezone";
 
 export async function listAvailability(params: {
   staffId: string;
   serviceDurationMin: number;
   date: string;
+  timeZone: string;
 }) {
-  const dateObj = new Date(`${params.date}T00:00:00`);
-  const weekday = dateObj.getDay();
+  const weekday = weekdayInTimeZone(params.date, params.timeZone);
 
   const availability = await prisma.staffAvailability.findFirst({
     where: { staffId: params.staffId, weekday },
@@ -18,18 +19,14 @@ export async function listAvailability(params: {
     return [];
   }
 
-  const start = set(dateObj, {
-    hours: availability.startHour,
-    minutes: 0,
-    seconds: 0,
-    milliseconds: 0,
-  });
-  const end = set(dateObj, {
-    hours: availability.endHour,
-    minutes: 0,
-    seconds: 0,
-    milliseconds: 0,
-  });
+  const start = zonedWallTimeToUtc(
+    params.date,
+    availability.startHour,
+    0,
+    0,
+    params.timeZone,
+  );
+  const end = zonedWallTimeToUtc(params.date, availability.endHour, 0, 0, params.timeZone);
 
   const existing = await prisma.booking.findMany({
     where: {
@@ -45,15 +42,22 @@ export async function listAvailability(params: {
     select: { calendarId: true },
   });
 
-  const googleBusyRanges = await listGoogleBusyRanges({
+  const freeBusy = await listGoogleBusyRanges({
     calendarId: staff?.calendarId,
     timeMin: start,
     timeMax: end,
   });
 
+  if (!freeBusy.ok) {
+    return [];
+  }
+
+  const googleBusyRanges = freeBusy.busy;
+
   const slots: string[] = [];
   let cursor = start;
-  while (isBefore(addMinutes(cursor, params.serviceDurationMin), end)) {
+  // Allow a slot that ends exactly at `end` (e.g. last slot 19:00–20:00 when endHour is 20).
+  while (!isAfter(addMinutes(cursor, params.serviceDurationMin), end)) {
     const slotEnd = addMinutes(cursor, params.serviceDurationMin);
     const overlaps = existing.some(
       (booking) => cursor < booking.endsAt && slotEnd > booking.startsAt,

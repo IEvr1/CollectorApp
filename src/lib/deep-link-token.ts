@@ -12,7 +12,14 @@ type TokenPayload = {
 };
 
 function tokenSecret() {
-  return process.env.SMS_LINK_SECRET ?? "dev-secret-change-me";
+  const secret = process.env.SMS_LINK_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    if (!secret) {
+      throw new Error("SMS_LINK_SECRET must be set in production");
+    }
+    return secret;
+  }
+  return secret ?? "dev-secret-change-me";
 }
 
 export async function createDeepLinkToken(payload: Omit<TokenPayload, "jti">) {
