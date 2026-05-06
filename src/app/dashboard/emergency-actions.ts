@@ -76,7 +76,7 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
 
   const cancelledBookings = await prisma.booking.findMany({
     where: { id: { in: cancelledIds } },
-    include: { customer: true, service: true, staff: true },
+    include: { customer: true },
     orderBy: { startsAt: "asc" },
   });
 

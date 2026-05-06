@@ -45,7 +45,7 @@ async function runDispatch() {
     where: { sentAt: null, sendAt: { lte: now } },
     include: {
       booking: {
-        include: { staff: true, customer: true, salon: true, service: true },
+        include: { customer: true, salon: true },
       },
     },
     orderBy: { sendAt: "asc" },

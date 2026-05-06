@@ -14,6 +14,15 @@ export type CalendarEventResult =
   | { ok: true; eventId: string | null }
   | { ok: false; eventId: null; reason: string };
 
+function resolveCalendarId(calendarId?: string | null) {
+  const staffCalendar = calendarId?.trim();
+  if (staffCalendar) {
+    return staffCalendar;
+  }
+  const fallbackCalendar = process.env.GOOGLE_DEFAULT_CALENDAR_ID?.trim();
+  return fallbackCalendar || null;
+}
+
 function getGoogleCalendarClient() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -36,7 +45,8 @@ export async function listGoogleBusyRanges(params: {
   timeMin: Date;
   timeMax: Date;
 }): Promise<FreeBusyResult> {
-  if (!params.calendarId) {
+  const calendarId = resolveCalendarId(params.calendarId);
+  if (!calendarId) {
     return { ok: true, busy: [] };
   }
 
@@ -54,11 +64,11 @@ export async function listGoogleBusyRanges(params: {
       requestBody: {
         timeMin: params.timeMin.toISOString(),
         timeMax: params.timeMax.toISOString(),
-        items: [{ id: params.calendarId }],
+        items: [{ id: calendarId }],
       },
     });
 
-    const busy = response.data.calendars?.[params.calendarId]?.busy ?? [];
+    const busy = response.data.calendars?.[calendarId]?.busy ?? [];
     const ranges = busy
       .filter((item) => item.start && item.end)
       .map((item) => ({
@@ -79,7 +89,8 @@ export async function createGoogleCalendarEvent(params: {
   start: Date;
   end: Date;
 }): Promise<CalendarEventResult> {
-  if (!params.calendarId) {
+  const calendarId = resolveCalendarId(params.calendarId);
+  if (!calendarId) {
     return { ok: true, eventId: null };
   }
 
@@ -94,7 +105,7 @@ export async function createGoogleCalendarEvent(params: {
 
   try {
     const response = await calendar.events.insert({
-      calendarId: params.calendarId,
+      calendarId,
       requestBody: {
         summary: params.summary,
         description: params.description,
@@ -116,7 +127,8 @@ export async function deleteGoogleCalendarEvent(params: {
   calendarId?: string | null;
   eventId?: string | null;
 }): Promise<CalendarMutationResult> {
-  if (!params.calendarId || !params.eventId) {
+  const calendarId = resolveCalendarId(params.calendarId);
+  if (!calendarId || !params.eventId) {
     return { ok: true };
   }
 
@@ -127,7 +139,7 @@ export async function deleteGoogleCalendarEvent(params: {
 
   try {
     await calendar.events.delete({
-      calendarId: params.calendarId,
+      calendarId,
       eventId: params.eventId,
     });
     return { ok: true };
@@ -152,7 +164,8 @@ export async function patchGoogleCalendarEvent(params: {
   start: Date;
   end: Date;
 }): Promise<CalendarMutationResult> {
-  if (!params.calendarId || !params.eventId) {
+  const calendarId = resolveCalendarId(params.calendarId);
+  if (!calendarId || !params.eventId) {
     return { ok: true };
   }
 
@@ -163,7 +176,7 @@ export async function patchGoogleCalendarEvent(params: {
 
   try {
     await calendar.events.patch({
-      calendarId: params.calendarId,
+      calendarId,
       eventId: params.eventId,
       requestBody: {
         ...(params.summary !== undefined ? { summary: params.summary } : {}),

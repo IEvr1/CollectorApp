@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
   const booking = await prisma.booking.findFirst({
     where: { id: session.bookingId, salonId: session.salonId },
-    include: { customer: true, service: true, staff: true, salon: true },
+    include: { customer: true, salon: true, service: true, staff: true },
   });
 
   if (!booking || booking.customer.phoneE164 !== session.phoneE164) {
