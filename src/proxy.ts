@@ -1,36 +1,15 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { isDashboardPageAuthorized } from "@/lib/dashboard-auth";
 
-function parseBasicAuth(header: string | null): { user: string; pass: string } | null {
-  if (!header?.startsWith("Basic ")) {
-    return null;
-  }
-  try {
-    const raw = atob(header.slice(6).trim());
-    const i = raw.indexOf(":");
-    if (i === -1) {
-      return null;
-    }
-    return { user: raw.slice(0, i), pass: raw.slice(i + 1) };
-  } catch {
-    return null;
-  }
-}
-
+/** Next.js 16 entry: dashboard Basic auth when `DASHBOARD_AUTH_SECRET` is set. */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (!pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }
 
-  const secret = process.env.DASHBOARD_AUTH_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.next();
-  }
-
-  const expectedUser = process.env.DASHBOARD_AUTH_USER?.trim() || "admin";
-  const parsed = parseBasicAuth(request.headers.get("authorization"));
-  if (!parsed || parsed.user !== expectedUser || parsed.pass !== secret) {
+  if (!isDashboardPageAuthorized(request)) {
     return new NextResponse("Authentication required", {
       status: 401,
       headers: { "WWW-Authenticate": 'Basic realm="Salon dashboard"' },

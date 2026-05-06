@@ -10,7 +10,9 @@ import { createGoogleCalendarEvent, listGoogleBusyRanges } from "@/lib/google-ca
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import { scheduleBookingReminders } from "@/lib/reminders";
+import { isSalonClosedOnLocalDate } from "@/lib/salon-closure";
 import { sendBookingSms } from "@/lib/sms";
+import { isoDateInTimeZone } from "@/lib/timezone";
 
 const bookingSchema = z.object({
   serviceId: z.string(),
@@ -54,12 +56,13 @@ export async function POST(request: Request) {
           slotUnavailable: "Η επιλεγμένη ώρα δεν είναι πλέον διαθέσιμη.",
           invalidPhone:
             "Βάλτε έγκυρο κυπριακό κινητό: 8 ψηφία (π.χ. 99XXXXXX χωρίς +357).",
-          smsConfirmed: "Το ραντεβού σας επιβεβαιώθηκε για",
+          smsConfirmed: "Επιβεβαιώθηκε ραντεβού στο",
           smsWith: "με",
           smsManage: "Διαχείριση ραντεβού:",
           smsLinkNote: " (Προσωπικό link — μην προωθείτε.)",
           calendarUnavailable:
             "Η διαθεσιμότητα δεν μπορεί να επιβεβαιωθεί αυτή τη στιγμή. Δοκιμάστε ξανά.",
+          salonClosed: "Το κομμωτήριο είναι κλειστά αυτή την ημερομηνία. Επιλέξτε άλλη μέρα.",
         }
       : {
           noSalon: "No salon configured",
@@ -68,12 +71,13 @@ export async function POST(request: Request) {
           slotUnavailable: "Selected slot is no longer available",
           invalidPhone:
             "Enter a valid Cyprus mobile: 8 digits (e.g. 99XXXXXX without +357).",
-          smsConfirmed: "Your appointment is confirmed for",
+          smsConfirmed: "Appointment confirmed at",
           smsWith: "with",
           smsManage: "Manage booking:",
           smsLinkNote: " (Personal link — do not forward.)",
           calendarUnavailable:
             "Availability could not be verified right now. Please try again.",
+          salonClosed: "The salon is closed on this date. Please pick another day.",
         };
   const dateFnsLocale = lang === "el" ? el : enGB;
 
@@ -102,6 +106,11 @@ export async function POST(request: Request) {
   const now = new Date();
   if (startsAt < now) {
     return NextResponse.json({ error: t.slotUnavailable }, { status: 409 });
+  }
+
+  const localDate = isoDateInTimeZone(startsAt, salon.timezone);
+  if (await isSalonClosedOnLocalDate(salon.id, localDate)) {
+    return NextResponse.json({ error: t.salonClosed }, { status: 409 });
   }
 
   const freeBusy = await listGoogleBusyRanges({
@@ -196,15 +205,18 @@ export async function POST(request: Request) {
         });
       }
 
-      const token = await createDeepLinkToken({
+      const { shortCode } = await createDeepLinkToken({
         salonId: salon.id,
         phoneE164,
         bookingId: booking.id,
       });
-      const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
-      const message = `${t.smsConfirmed} ${format(startsAt, "PPP p", {
-        locale: dateFnsLocale,
-      })} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`;
+      const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+      const manageUrl = `${base}/l/${shortCode}`;
+      const when = format(startsAt, "PPP p", { locale: dateFnsLocale });
+      const message =
+        lang === "el"
+          ? `${t.smsConfirmed} ${salon.name}. Υπηρεσία: ${booking.service.name}. ${when} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`
+          : `${t.smsConfirmed} ${salon.name}. Service: ${booking.service.name}. ${when} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`;
 
       try {
         await sendBookingSms({ phoneE164, body: message });

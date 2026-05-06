@@ -3,7 +3,7 @@ import { smsLinkSigningSecret } from "@/lib/deep-link-token";
 
 export const MANAGE_SESSION_COOKIE = "salon_manage_session";
 
-const SESSION_TTL = "30m";
+const DEFAULT_SESSION_TTL_SECONDS = 30 * 60;
 
 export type ManageSessionPayload = {
   salonId: string;
@@ -13,9 +13,13 @@ export type ManageSessionPayload = {
 
 type JwtBody = ManageSessionPayload & { typ?: string };
 
-export function signManageSessionCookieValue(payload: ManageSessionPayload): string {
+export function signManageSessionCookieValue(
+  payload: ManageSessionPayload,
+  expiresInSeconds: number = DEFAULT_SESSION_TTL_SECONDS,
+): string {
+  const sec = Math.max(60, Math.min(expiresInSeconds, 7 * 24 * 60 * 60));
   return jwt.sign({ ...payload, typ: "manage" }, smsLinkSigningSecret(), {
-    expiresIn: SESSION_TTL,
+    expiresIn: sec,
   });
 }
 

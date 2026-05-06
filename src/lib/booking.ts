@@ -1,7 +1,8 @@
 import { addMinutes, isAfter } from "date-fns";
 import { listGoogleBusyRanges, type BusyRange } from "@/lib/google-calendar";
 import { prisma } from "@/lib/prisma";
-import { weekdayInTimeZone, zonedWallTimeToUtc } from "@/lib/timezone";
+import { isSalonClosedOnLocalDate } from "@/lib/salon-closure";
+import { todayIsoInTimeZone, weekdayInTimeZone, zonedWallTimeToUtc } from "@/lib/timezone";
 
 /** Removes busy intervals overlapping `ignore` (e.g. this booking's current Google block when rescheduling). */
 function subtractBusyWindow(busy: BusyRange[], ignore: { start: Date; end: Date }): BusyRange[] {
@@ -26,9 +27,23 @@ export async function listAvailability(params: {
   serviceDurationMin: number;
   date: string;
   timeZone: string;
+  salonId?: string;
   /** When rescheduling, omit this booking from overlap checks. */
   excludeBookingId?: string;
 }) {
+  const now = new Date();
+  const todayStr = todayIsoInTimeZone(params.timeZone, now);
+  if (params.date < todayStr) {
+    return [];
+  }
+
+  if (params.salonId) {
+    const closed = await isSalonClosedOnLocalDate(params.salonId, params.date);
+    if (closed) {
+      return [];
+    }
+  }
+
   const weekday = weekdayInTimeZone(params.date, params.timeZone);
 
   const availability = await prisma.staffAvailability.findFirst({
@@ -91,9 +106,14 @@ export async function listAvailability(params: {
 
   const slots: string[] = [];
   let cursor = start;
+  const isToday = params.date === todayStr;
   // Allow a slot that ends exactly at `end` (e.g. last slot 19:00–20:00 when endHour is 20).
   while (!isAfter(addMinutes(cursor, params.serviceDurationMin), end)) {
     const slotEnd = addMinutes(cursor, params.serviceDurationMin);
+    if (isToday && cursor < now) {
+      cursor = addMinutes(cursor, 30);
+      continue;
+    }
     const overlaps = existing.some(
       (booking) => cursor < booking.endsAt && slotEnd > booking.startsAt,
     );

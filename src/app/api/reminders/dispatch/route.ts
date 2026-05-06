@@ -44,7 +44,7 @@ async function runDispatch() {
     where: { sentAt: null, sendAt: { lte: now } },
     include: {
       booking: {
-        include: { staff: true, customer: true, salon: true },
+        include: { staff: true, customer: true, salon: true, service: true },
       },
     },
     orderBy: { sendAt: "asc" },
@@ -65,16 +65,18 @@ async function runDispatch() {
       continue;
     }
 
-    const token = await createDeepLinkToken({
+    const { shortCode } = await createDeepLinkToken({
       salonId: booking.salonId,
       phoneE164: booking.customer.phoneE164,
       bookingId: booking.id,
     });
 
-    const manageUrl = `${process.env.APP_BASE_URL ?? "http://localhost:3000"}/r/${token}`;
-    const message = `Reminder: your appointment is at ${format(booking.startsAt, "PPP p")} with ${
-      booking.staff.name
-    }. Manage booking: ${manageUrl} (personal link — do not forward.)`;
+    const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+    const manageUrl = `${base}/l/${shortCode}`;
+    const message = `Reminder: ${booking.salon.name} — ${booking.service.name}. Your appointment is at ${format(
+      booking.startsAt,
+      "PPP p",
+    )} with ${booking.staff.name}. Manage: ${manageUrl} (personal link — do not forward.)`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });
     await prisma.bookingReminder.update({

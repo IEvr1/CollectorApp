@@ -1,6 +1,62 @@
 import { NextResponse } from "next/server";
+import type { Booking, Customer, Service, Staff } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
+
+type BookingWithRelations = Booking & {
+  customer: Customer;
+  service: Service;
+  staff: Staff;
+};
+
+function phaseForBooking(
+  booking: Booking,
+  now: Date,
+): { uiPhase: "manageable" | "past" | "cancelled" | "completed"; canManage: boolean } {
+  const canManage = booking.status === "CONFIRMED" && booking.endsAt > now;
+  let uiPhase: "manageable" | "past" | "cancelled" | "completed";
+  if (booking.status === "CANCELLED") {
+    uiPhase = "cancelled";
+  } else if (booking.status === "COMPLETED") {
+    uiPhase = "completed";
+  } else if (booking.status === "CONFIRMED" && booking.endsAt <= now) {
+    uiPhase = "past";
+  } else {
+    uiPhase = "manageable";
+  }
+  return { uiPhase, canManage };
+}
+
+function serializeBookingSummary(booking: BookingWithRelations, now: Date) {
+  const { uiPhase, canManage } = phaseForBooking(booking, now);
+  return {
+    id: booking.id,
+    startsAt: booking.startsAt.toISOString(),
+    endsAt: booking.endsAt.toISOString(),
+    status: booking.status,
+    service: {
+      id: booking.service.id,
+      name: booking.service.name,
+      durationMin: booking.service.durationMin,
+    },
+    staff: { id: booking.staff.id, name: booking.staff.name },
+    uiPhase,
+    canManage,
+  };
+}
+
+async function loadUpcomingConfirmed(customerId: string, salonId: string, now: Date) {
+  return prisma.booking.findMany({
+    where: {
+      customerId,
+      salonId,
+      status: "CONFIRMED",
+      endsAt: { gt: now },
+    },
+    include: { customer: true, service: true, staff: true },
+    orderBy: { startsAt: "asc" },
+  });
+}
 
 export async function GET() {
   const session = await getManageSessionPayload();
@@ -13,12 +69,18 @@ export async function GET() {
     return NextResponse.json({ error: "Salon not found" }, { status: 404 });
   }
 
+  const now = new Date();
+
   if (!session.bookingId) {
     const customer = await prisma.customer.findUnique({
       where: {
         salonId_phoneE164: { salonId: session.salonId, phoneE164: session.phoneE164 },
       },
     });
+    const upcomingRows = customer
+      ? await loadUpcomingConfirmed(customer.id, session.salonId, now)
+      : [];
+    const upcomingBookings = upcomingRows.map((b) => serializeBookingSummary(b, now));
     return NextResponse.json({
       salonName: salon.name,
       salonTimezone: salon.timezone,
@@ -27,6 +89,7 @@ export async function GET() {
       booking: null,
       uiPhase: "no_booking" as const,
       canManage: false,
+      upcomingBookings,
     });
   }
 
@@ -43,20 +106,10 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const now = new Date();
-  const canManage =
-    booking.status === "CONFIRMED" && booking.endsAt > now;
+  const { uiPhase, canManage } = phaseForBooking(booking, now);
 
-  let uiPhase: "manageable" | "past" | "cancelled" | "completed";
-  if (booking.status === "CANCELLED") {
-    uiPhase = "cancelled";
-  } else if (booking.status === "COMPLETED") {
-    uiPhase = "completed";
-  } else if (booking.status === "CONFIRMED" && booking.endsAt <= now) {
-    uiPhase = "past";
-  } else {
-    uiPhase = "manageable";
-  }
+  const upcomingRows = await loadUpcomingConfirmed(booking.customerId, session.salonId, now);
+  const upcomingBookings = upcomingRows.map((b) => serializeBookingSummary(b, now));
 
   return NextResponse.json({
     salonName: salon.name,
@@ -77,5 +130,6 @@ export async function GET() {
     },
     uiPhase,
     canManage,
+    upcomingBookings,
   });
 }

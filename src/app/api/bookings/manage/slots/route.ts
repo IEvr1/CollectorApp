@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     serviceDurationMin: booking.service.durationMin,
     date: body.date,
     timeZone: salon.timezone,
+    salonId: salon.id,
     excludeBookingId: booking.id,
   });
 

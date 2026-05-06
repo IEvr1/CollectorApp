@@ -1,8 +1,17 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import type { ManageSessionPayload } from "@/lib/manage-session";
 
-const TOKEN_TTL_SECONDS = 60 * 30;
+const DEFAULT_TOKEN_TTL_SECONDS = 60 * 30;
+const MAX_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MIN_TOKEN_TTL_SECONDS = 60;
+
+function normalizeTtlSeconds(requested?: number): number {
+  const base = requested ?? DEFAULT_TOKEN_TTL_SECONDS;
+  return Math.min(MAX_TOKEN_TTL_SECONDS, Math.max(MIN_TOKEN_TTL_SECONDS, base));
+}
 
 type TokenPayload = {
   salonId: string;
@@ -10,6 +19,16 @@ type TokenPayload = {
   bookingId?: string;
   jti: string;
 };
+
+function randomShortCode(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const bytes = crypto.randomBytes(12);
+  let out = "";
+  for (let i = 0; i < 12; i += 1) {
+    out += alphabet[bytes[i]! % alphabet.length]!;
+  }
+  return out;
+}
 
 export function smsLinkSigningSecret() {
   const secret = process.env.SMS_LINK_SECRET;
@@ -22,24 +41,41 @@ export function smsLinkSigningSecret() {
   return secret ?? "dev-secret-change-me";
 }
 
-export async function createDeepLinkToken(payload: Omit<TokenPayload, "jti">) {
+export async function createDeepLinkToken(
+  payload: Omit<TokenPayload, "jti">,
+  options?: { ttlSeconds?: number },
+): Promise<{ token: string; shortCode: string; expiresAt: Date; ttlSeconds: number }> {
+  const ttlSeconds = normalizeTtlSeconds(options?.ttlSeconds);
   const jti = crypto.randomUUID();
   const signed = jwt.sign({ ...payload, jti }, smsLinkSigningSecret(), {
-    expiresIn: TOKEN_TTL_SECONDS,
+    expiresIn: ttlSeconds,
   });
   const tokenHash = crypto.createHash("sha256").update(signed).digest("hex");
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
-  await prisma.smsLinkToken.create({
-    data: {
-      salonId: payload.salonId,
-      bookingId: payload.bookingId,
-      phoneE164: payload.phoneE164,
-      tokenHash,
-      expiresAt: new Date(Date.now() + TOKEN_TTL_SECONDS * 1000),
-    },
-  });
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const shortCode = randomShortCode();
+    try {
+      await prisma.smsLinkToken.create({
+        data: {
+          salonId: payload.salonId,
+          bookingId: payload.bookingId,
+          phoneE164: payload.phoneE164,
+          tokenHash,
+          shortCode,
+          expiresAt,
+        },
+      });
+      return { token: signed, shortCode, expiresAt, ttlSeconds };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        continue;
+      }
+      throw error;
+    }
+  }
 
-  return signed;
+  throw new Error("Could not allocate short link code");
 }
 
 /** Validates SMS deep-link JWT and DB row. Does not consume the link — same URL may be opened until `expiresAt` (e.g. reminder SMS). */
@@ -56,4 +92,24 @@ export async function verifyDeepLinkToken(token: string) {
   }
 
   return decoded;
+}
+
+/** Resolve short `/l/:code` path; same expiry rules as JWT link. */
+export async function resolveManagePayloadByShortCode(
+  shortCode: string,
+): Promise<ManageSessionPayload & { linkExpiresAt: Date }> {
+  const record = await prisma.smsLinkToken.findFirst({
+    where: { shortCode, expiresAt: { gt: new Date() } },
+  });
+
+  if (!record) {
+    throw new Error("Link invalid or expired");
+  }
+
+  return {
+    salonId: record.salonId,
+    phoneE164: record.phoneE164,
+    bookingId: record.bookingId ?? undefined,
+    linkExpiresAt: record.expiresAt,
+  };
 }

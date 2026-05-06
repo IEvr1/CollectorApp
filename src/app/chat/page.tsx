@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { parseLocale, type Locale } from "@/lib/locale";
+import { todayIsoInTimeZone } from "@/lib/timezone";
 
 type Service = { id: string; name: string; durationMin: number };
 type Staff = { id: string; name: string };
@@ -16,6 +17,11 @@ type ManageBooking = {
   staff: { id: string; name: string };
 };
 
+type ManageUpcomingBooking = ManageBooking & {
+  uiPhase: "manageable" | "past" | "cancelled" | "completed";
+  canManage: boolean;
+};
+
 type ManageSummary = {
   salonName: string;
   salonTimezone: string;
@@ -24,6 +30,7 @@ type ManageSummary = {
   booking: ManageBooking | null;
   uiPhase: "manageable" | "past" | "cancelled" | "completed" | "no_booking";
   canManage: boolean;
+  upcomingBookings?: ManageUpcomingBooking[];
 };
 
 const todayStr = new Date().toISOString().slice(0, 10);
@@ -71,6 +78,8 @@ export default function ChatPage() {
           manageHeading: "Το ραντεβού σας",
           cancelBooking: "Ακύρωση ραντεβού",
           rescheduleBooking: "Αλλαγή ώρας",
+          additionalAppointment: "Νέο επιπλέον ραντεβού",
+          backToAppointment: "Πίσω στο τρέχον ραντεβού",
           confirmCancel: "Είστε σίγουροι; Η ακύρωση είναι οριστική.",
           cancelling: "Ακύρωση...",
           cancelledOk: "Το ραντεβού ακυρώθηκε.",
@@ -84,9 +93,11 @@ export default function ChatPage() {
           cancelledBooking: "Αυτό το ραντεβού είχε ακυρωθεί.",
           completedBooking: "Αυτό το ραντεβού έχει ολοκληρωθεί.",
           bookAgain: "Κλείστε νέο ραντεβού",
-          manageDisclaimer:
-            "Προσωπικό link — μην το προωθείτε. Όποιος το ανοίγει μπορεί να διαχειριστεί το ραντεβού για τον αριθμό του SMS.",
+          manageDisclaimer: "Προσωπικό link — Μην το προωθείτε.",
           staffLabel: "Staff",
+          otherAppointments: "Τα επερχόμενα ραντεβού σας",
+          switchAppointmentHint:
+            "Έχετε και άλλο ενεργό ραντεβού — επιλέξτε το παρακάτω για διαχείριση.",
         }
       : {
           welcome: "Welcome! Which service would you like?",
@@ -120,6 +131,8 @@ export default function ChatPage() {
           manageHeading: "Your appointment",
           cancelBooking: "Cancel appointment",
           rescheduleBooking: "Reschedule",
+          additionalAppointment: "Book another appointment",
+          backToAppointment: "Back to current appointment",
           confirmCancel: "Cancel this appointment? This cannot be undone.",
           cancelling: "Cancelling...",
           cancelledOk: "Your appointment has been cancelled.",
@@ -136,6 +149,9 @@ export default function ChatPage() {
           manageDisclaimer:
             "Personal link — do not forward. Anyone with this link can manage the appointment for the phone number that received the SMS.",
           staffLabel: "Staff",
+          otherAppointments: "Your upcoming appointments",
+          switchAppointmentHint:
+            "You have another active appointment — select it below to manage it.",
         };
 
   const intlLocale = locale === "el" ? "el-CY" : "en-GB";
@@ -146,6 +162,7 @@ export default function ChatPage() {
   const [serviceId, setServiceId] = useState("");
   const [staffId, setStaffId] = useState("");
   const [date, setDate] = useState(todayStr);
+  const [minBookableDate, setMinBookableDate] = useState<string | null>(null);
   const [slots, setSlots] = useState<string[]>([]);
   const [slot, setSlot] = useState("");
   const [name, setName] = useState("");
@@ -159,17 +176,31 @@ export default function ChatPage() {
   const [resultTone, setResultTone] = useState<"success" | "error" | "neutral">(
     "neutral",
   );
+  const [showPostRescheduleSummary, setShowPostRescheduleSummary] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phoneRetryMessage, setPhoneRetryMessage] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const chatContentRef = useRef<HTMLDivElement>(null);
+  const bookingRequestInFlightRef = useRef(false);
+  const manageRequestInFlightRef = useRef(false);
+
+  const scrollChatToBottom = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, []);
 
   const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
   const [identity, setIdentity] = useState<"pending" | "returning" | "new">("returning");
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [manageView, setManageView] = useState<"home" | "reschedule">("home");
   const [rebookActive, setRebookActive] = useState(false);
   const [manageSlots, setManageSlots] = useState<string[]>([]);
   const [manageSlot, setManageSlot] = useState("");
   const [manageBusy, setManageBusy] = useState(false);
+  const [focusBusy, setFocusBusy] = useState(false);
 
   const loadManageSummary = useCallback(async () => {
     const response = await fetch("/api/bookings/manage/summary", { credentials: "include" });
@@ -182,16 +213,21 @@ export default function ChatPage() {
       return;
     }
     const data = (await response.json()) as ManageSummary;
-    setManage(data);
+    setManage({
+      ...data,
+      upcomingBookings: data.upcomingBookings ?? [],
+    });
     if (data.booking || data.customerName) {
-      setIdentity("pending");
+      if (!identityConfirmed) {
+        setIdentity("pending");
+      }
     } else {
       setIdentity("returning");
       if (data.customerPhone) {
         setPhone(data.customerPhone);
       }
     }
-  }, []);
+  }, [identityConfirmed]);
 
   useEffect(() => {
     void loadManageSummary();
@@ -209,17 +245,9 @@ export default function ChatPage() {
   }, [locale, t.linkExpired]);
 
   useLayoutEffect(() => {
-    const el = chatScrollRef.current;
-    if (!el) {
-      return;
-    }
-    const id = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-      });
-    });
-    return () => cancelAnimationFrame(id);
+    scrollChatToBottom();
   }, [
+    scrollChatToBottom,
     serviceId,
     staffId,
     date,
@@ -227,6 +255,7 @@ export default function ChatPage() {
     result,
     slots,
     services.length,
+    staff.length,
     locale,
     busy,
     phoneRetryMessage,
@@ -236,8 +265,22 @@ export default function ChatPage() {
     manageSlots,
     manageSlot,
     manageBusy,
+    focusBusy,
     rebookActive,
   ]);
+
+  useEffect(() => {
+    const root = chatScrollRef.current;
+    const content = chatContentRef.current;
+    if (!root || !content) {
+      return;
+    }
+    const ro = new ResizeObserver(() => {
+      root.scrollTop = root.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -261,6 +304,9 @@ export default function ChatPage() {
       if (data.salon?.name) {
         setSalonName(data.salon.name);
       }
+      if (typeof data.minBookableDate === "string") {
+        setMinBookableDate(data.minBookableDate);
+      }
       setServices(data.services ?? []);
       setStaff(data.staff ?? []);
       setSlots(data.slots ?? []);
@@ -268,6 +314,17 @@ export default function ChatPage() {
 
     void load();
   }, [serviceId, staffId, date, locale]);
+
+  useEffect(() => {
+    if (minBookableDate === null) {
+      return;
+    }
+    if (date < minBookableDate) {
+      setDate(minBookableDate);
+      setSlot("");
+      setManageSlot("");
+    }
+  }, [minBookableDate, date]);
 
   useEffect(() => {
     if (manageView !== "reschedule" || !manage?.booking) {
@@ -329,6 +386,9 @@ export default function ChatPage() {
   const hasService = Boolean(serviceId);
   const hasStaff = Boolean(staffId);
   const hasSlot = Boolean(slot);
+  const maskPhoneForManagedRebook =
+    rebookActive && identity === "returning" && Boolean(manage?.customerPhone);
+  const maskedManagedPhone = maskPhone(phone);
 
   async function clearManageSession() {
     await fetch("/api/bookings/manage/session", {
@@ -341,6 +401,7 @@ export default function ChatPage() {
     await clearManageSession();
     setManage(null);
     setIdentity("returning");
+    setIdentityConfirmed(true);
     setRebookActive(false);
     setManageView("home");
     setServiceId("");
@@ -359,6 +420,7 @@ export default function ChatPage() {
 
   async function onReturningCustomer() {
     setIdentity("returning");
+    setIdentityConfirmed(true);
     if (manage?.customerName && !manage.booking) {
       setName(manage.customerName);
     }
@@ -374,6 +436,26 @@ export default function ChatPage() {
     if (manage?.booking && ["past", "cancelled", "completed"].includes(manage.uiPhase)) {
       setRebookActive(false);
     }
+  }
+
+  function onAdditionalAppointment() {
+    if (!manage?.booking) {
+      return;
+    }
+    setSalonName(manage.salonName);
+    setRebookActive(true);
+    setManageView("home");
+    setServiceId("");
+    setStaffId("");
+    setSlot("");
+    setSlots([]);
+    setManageSlot("");
+    setName(manage.customerName ?? "");
+    setPhone(manage.customerPhone);
+    setDate(todayStr);
+    setResult("");
+    setResultTone("neutral");
+    setPhoneRetryMessage(null);
   }
 
   async function onBookAgain() {
@@ -401,51 +483,74 @@ export default function ChatPage() {
   }
 
   async function onCancelBooking() {
+    if (manageRequestInFlightRef.current) {
+      return;
+    }
     if (!window.confirm(t.confirmCancel)) {
       return;
     }
+    manageRequestInFlightRef.current = true;
     setManageBusy(true);
-    const response = await fetch("/api/bookings/manage/cancel", {
-      method: "POST",
-      credentials: "include",
-    });
-    setManageBusy(false);
-    if (!response.ok) {
-      setResult(t.cancelFailed);
-      setResultTone("error");
-      return;
+    try {
+      const response = await fetch("/api/bookings/manage/cancel", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        setResult(t.cancelFailed);
+        setResultTone("error");
+        setShowPostRescheduleSummary(false);
+        return;
+      }
+      setResult(t.cancelledOk);
+      setResultTone("success");
+      setShowPostRescheduleSummary(false);
+      await loadManageSummary();
+    } finally {
+      setManageBusy(false);
+      manageRequestInFlightRef.current = false;
     }
-    setResult(t.cancelledOk);
-    setResultTone("success");
-    await loadManageSummary();
   }
 
   async function onConfirmReschedule() {
+    if (manageRequestInFlightRef.current) {
+      return;
+    }
     if (!manageSlot) {
       return;
     }
+    manageRequestInFlightRef.current = true;
     setManageBusy(true);
-    const response = await fetch("/api/bookings/manage/reschedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ startsAt: manageSlot }),
-    });
-    setManageBusy(false);
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setResult((data as { error?: string }).error ?? t.rescheduleFailed);
-      setResultTone("error");
-      return;
+    try {
+      const response = await fetch("/api/bookings/manage/reschedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ startsAt: manageSlot }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setResult((data as { error?: string }).error ?? t.rescheduleFailed);
+        setResultTone("error");
+        setShowPostRescheduleSummary(false);
+        return;
+      }
+      setResult(t.rescheduleOk);
+      setResultTone("success");
+      setShowPostRescheduleSummary(true);
+      setManageView("home");
+      setManageSlot("");
+      await loadManageSummary();
+    } finally {
+      setManageBusy(false);
+      manageRequestInFlightRef.current = false;
     }
-    setResult(t.rescheduleOk);
-    setResultTone("success");
-    setManageView("home");
-    setManageSlot("");
-    await loadManageSummary();
   }
 
   async function bookNow() {
+    if (bookingRequestInFlightRef.current) {
+      return;
+    }
     if (!serviceId || !staffId || !slot || !name || !phone) {
       setPhoneRetryMessage(null);
       setResult(t.missing);
@@ -462,43 +567,55 @@ export default function ChatPage() {
       return;
     }
 
+    const refreshManageAfterBook = rebookActive && Boolean(manage?.booking);
+
+    bookingRequestInFlightRef.current = true;
     setBusy(true);
     setResult("");
     setResultTone("neutral");
     setPhoneRetryMessage(null);
-    const response = await fetch("/api/bookings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceId,
-        staffId,
-        startsAt: slot,
-        name,
-        phone,
-        lang: locale,
-      }),
-    });
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceId,
+          staffId,
+          startsAt: slot,
+          name,
+          phone,
+          lang: locale,
+        }),
+      });
 
-    const data = await response.json();
-    if (!response.ok) {
-      if (response.status === 400 && data.code === "INVALID_PHONE") {
-        setResult("");
-        setResultTone("neutral");
-        setPhoneRetryMessage(t.phoneRetry);
-      } else {
-        setPhoneRetryMessage(null);
-        setResult(data.error ?? t.failed);
-        setResultTone("error");
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 400 && data.code === "INVALID_PHONE") {
+          setResult("");
+          setResultTone("neutral");
+          setPhoneRetryMessage(t.phoneRetry);
+        } else {
+          setPhoneRetryMessage(null);
+          setResult(data.error ?? t.failed);
+          setResultTone("error");
+        }
+        return;
       }
-      setBusy(false);
-      return;
-    }
 
-    setPhoneRetryMessage(null);
-    setResult(`${t.success} ${data.manageUrl}`);
-    setResultTone("success");
-    setBusy(false);
-    setRebookActive(false);
+        setPhoneRetryMessage(null);
+      setResult(`${t.success} ${data.manageUrl}`);
+      setResultTone("success");
+      setRebookActive(false);
+      if (refreshManageAfterBook) {
+        setServiceId("");
+        setStaffId("");
+        setSlot("");
+        await loadManageSummary();
+      }
+    } finally {
+      setBusy(false);
+      bookingRequestInFlightRef.current = false;
+    }
   }
 
   const showNormalFlow =
@@ -536,6 +653,48 @@ export default function ChatPage() {
     manage?.customerName?.trim() ||
     (locale === "el" ? "ο πελάτης του κινητού του SMS" : "the SMS recipient");
 
+  const upcomingSwitcher = useMemo(() => {
+    if (!manage) {
+      return { show: false, upcoming: [] as ManageUpcomingBooking[] };
+    }
+    const upcoming = manage.upcomingBookings ?? [];
+    const focusId = manage.booking?.id;
+    const show =
+      upcoming.length > 1 ||
+      (upcoming.length === 1 && focusId !== undefined && upcoming[0].id !== focusId);
+    return { show, upcoming };
+  }, [manage]);
+
+  async function onFocusBooking(bookingId: string) {
+    const focusedId = manage?.booking?.id;
+    const upcoming = manage?.upcomingBookings ?? [];
+    const inUpcomingList = focusedId !== undefined && upcoming.some((u) => u.id === focusedId);
+    const redundantFocus =
+      bookingId === focusedId && manage?.uiPhase === "manageable" && inUpcomingList;
+    if (redundantFocus) {
+      return;
+    }
+    setFocusBusy(true);
+    try {
+      const response = await fetch("/api/bookings/manage/focus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ bookingId }),
+      });
+      if (!response.ok) {
+        setResult(locale === "el" ? "Η εναλλαγή ραντεβού απέτυχε." : "Could not switch appointment.");
+        setResultTone("error");
+        return;
+      }
+      setManageView("home");
+      setManageSlot("");
+      await loadManageSummary();
+    } finally {
+      setFocusBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col px-4 py-6">
       <header className="mb-4 shrink-0">
@@ -571,8 +730,9 @@ export default function ChatPage() {
 
       <div
         ref={chatScrollRef}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 shadow-inner"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 shadow-inner"
       >
+        <div ref={chatContentRef} className="flex flex-col gap-3">
         {manage === undefined && (
           <p className="text-sm text-zinc-500">{locale === "el" ? "Φόρτωση…" : "Loading…"}</p>
         )}
@@ -609,6 +769,16 @@ export default function ChatPage() {
                   : t.manageHeading
               }
             />
+            {upcomingSwitcher.show && (
+              <ManageUpcomingSwitcher
+                manage={manage}
+                upcoming={upcomingSwitcher.upcoming}
+                intlLocale={intlLocale}
+                label={t.otherAppointments}
+                disabled={focusBusy || manageBusy}
+                onSelect={(id) => void onFocusBooking(id)}
+              />
+            )}
             <div className="max-w-[85%] rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800 sm:max-w-full">
               <p className="font-semibold text-violet-800">{t.manageHeading}</p>
               <p>
@@ -626,7 +796,7 @@ export default function ChatPage() {
               </p>
             </div>
             <p className="text-xs text-zinc-500">{t.manageDisclaimer}</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
                 disabled={manageBusy}
@@ -639,6 +809,9 @@ export default function ChatPage() {
                 type="button"
                 disabled={manageBusy}
                 onClick={() => {
+                  setResult("");
+                  setResultTone("neutral");
+                  setShowPostRescheduleSummary(false);
                   setManageView("reschedule");
                   setManageSlot("");
                   setDate(todayStr);
@@ -646,6 +819,14 @@ export default function ChatPage() {
                 className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 disabled:opacity-50"
               >
                 {t.rescheduleBooking}
+              </button>
+              <button
+                type="button"
+                disabled={manageBusy}
+                onClick={() => onAdditionalAppointment()}
+                className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 disabled:opacity-50"
+              >
+                {t.additionalAppointment}
               </button>
             </div>
           </>
@@ -663,6 +844,19 @@ export default function ChatPage() {
                     : t.completedBooking
               }
             />
+            {upcomingSwitcher.show && (
+              <>
+                <p className="text-sm text-zinc-600">{t.switchAppointmentHint}</p>
+                <ManageUpcomingSwitcher
+                  manage={manage}
+                  upcoming={upcomingSwitcher.upcoming}
+                  intlLocale={intlLocale}
+                  label={t.otherAppointments}
+                  disabled={focusBusy || manageBusy}
+                  onSelect={(id) => void onFocusBooking(id)}
+                />
+              </>
+            )}
             <button
               type="button"
               onClick={() => void onBookAgain()}
@@ -675,10 +869,25 @@ export default function ChatPage() {
 
         {showReschedule && manage?.booking && (
           <>
+            {upcomingSwitcher.show && (
+              <ManageUpcomingSwitcher
+                manage={manage}
+                upcoming={upcomingSwitcher.upcoming}
+                intlLocale={intlLocale}
+                label={t.otherAppointments}
+                disabled={focusBusy || manageBusy}
+                onSelect={(id) => void onFocusBooking(id)}
+              />
+            )}
             <Bubble role="assistant" text={t.rescheduleTitle} />
             <div className="max-w-[85%]">
               <input
                 value={date}
+                min={
+                  manage?.salonTimezone
+                    ? todayIsoInTimeZone(manage.salonTimezone)
+                    : (minBookableDate ?? undefined)
+                }
                 onChange={(event) => {
                   setDate(event.target.value);
                   setManageSlot("");
@@ -739,19 +948,47 @@ export default function ChatPage() {
               </div>
             )}
             {manageSlot && (
-              <button
-                type="button"
-                disabled={manageBusy}
-                onClick={() => void onConfirmReschedule()}
-                className="w-fit rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {manageBusy ? t.rescheduling : t.confirmReschedule}
-              </button>
+              <>
+                <Bubble
+                  role="user"
+                  text={new Date(manageSlot).toLocaleString(intlLocale, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                />
+                <div className="max-w-[85%] rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800 sm:max-w-full">
+                  <p className="font-semibold text-violet-800">{t.bookingSummary}</p>
+                  <p>
+                    {t.service}: {manage.booking.service.name}
+                  </p>
+                  <p>
+                    {t.staffLabel}: {manage.booking.staff.name}
+                  </p>
+                  <p>
+                    {t.time}:{" "}
+                    {new Date(manageSlot).toLocaleString(intlLocale, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={manageBusy}
+                  onClick={() => void onConfirmReschedule()}
+                  className="w-fit rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {manageBusy ? t.rescheduling : t.confirmReschedule}
+                </button>
+              </>
             )}
             <button
               type="button"
               disabled={manageBusy}
               onClick={() => {
+                setResult("");
+                setResultTone("neutral");
+                setShowPostRescheduleSummary(false);
                 setManageView("home");
                 setManageSlot("");
               }}
@@ -774,6 +1011,23 @@ export default function ChatPage() {
                     : t.welcome
               }
             />
+            {rebookActive && manage?.booking && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRebookActive(false);
+                  setServiceId("");
+                  setStaffId("");
+                  setSlot("");
+                  setResult("");
+                  setResultTone("neutral");
+                  setPhoneRetryMessage(null);
+                }}
+                className="w-fit text-sm text-zinc-600 underline"
+              >
+                {t.backToAppointment}
+              </button>
+            )}
             {!hasService && (
               <CardGrid>
                 {services.map((item) => (
@@ -790,24 +1044,22 @@ export default function ChatPage() {
               </CardGrid>
             )}
 
-            {hasService && selectedService && !rebookActive && (
+            {hasService && selectedService && !hasStaff && (
               <>
                 <Bubble role="user" text={selectedService.name} />
                 <Bubble role="assistant" text={t.pickStaff} />
-                {!hasStaff && (
-                  <CardGrid>
-                    {staff.map((member) => (
-                      <button
-                        key={member.id}
-                        type="button"
-                        onClick={() => selectStaff(member.id)}
-                        className={choiceClass(false)}
-                      >
-                        {member.name}
-                      </button>
-                    ))}
-                  </CardGrid>
-                )}
+                <CardGrid>
+                  {staff.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => selectStaff(member.id)}
+                      className={choiceClass(false)}
+                    >
+                      {member.name}
+                    </button>
+                  ))}
+                </CardGrid>
               </>
             )}
 
@@ -822,6 +1074,7 @@ export default function ChatPage() {
                 <div className="max-w-[85%]">
                   <input
                     value={date}
+                    min={minBookableDate ?? undefined}
                     onChange={(event) => {
                       setDate(event.target.value);
                       setSlot("");
@@ -904,12 +1157,16 @@ export default function ChatPage() {
                     className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm transition focus:border-violet-300"
                   />
                   <input
-                    value={phone}
+                    value={maskPhoneForManagedRebook ? maskedManagedPhone : phone}
                     onChange={(event) => {
+                      if (maskPhoneForManagedRebook) {
+                        return;
+                      }
                       setPhone(event.target.value);
                       setPhoneRetryMessage(null);
                     }}
                     placeholder={t.phonePh}
+                    readOnly={maskPhoneForManagedRebook}
                     className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm transition focus:border-violet-300"
                   />
                 </div>
@@ -942,7 +1199,7 @@ export default function ChatPage() {
           </>
         )}
 
-        {result && (
+        {result && !showReschedule && (
           <Bubble
             role="assistant"
             text={result}
@@ -955,6 +1212,86 @@ export default function ChatPage() {
             }
           />
         )}
+        {showPostRescheduleSummary &&
+          Boolean(result) &&
+          !showReschedule &&
+          showManageHome &&
+          manage?.booking &&
+          resultTone === "success" && (
+            <div className="max-w-[85%] rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800 sm:max-w-full">
+              <p className="font-semibold text-violet-800">{t.bookingSummary}</p>
+              <p>
+                {t.service}: {manage.booking.service.name}
+              </p>
+              <p>
+                {t.staffLabel}: {manage.booking.staff.name}
+              </p>
+              <p>
+                {t.time}:{" "}
+                {new Date(manage.booking.startsAt).toLocaleString(intlLocale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManageUpcomingSwitcher({
+  manage,
+  upcoming,
+  intlLocale,
+  label,
+  disabled,
+  onSelect,
+}: {
+  manage: ManageSummary;
+  upcoming: ManageUpcomingBooking[];
+  intlLocale: string;
+  label: string;
+  disabled: boolean;
+  onSelect: (bookingId: string) => void;
+}) {
+  const focusId = manage.booking?.id;
+  const focusInUpcoming =
+    focusId !== undefined && upcoming.some((u) => u.id === focusId);
+
+  return (
+    <div className="max-w-[85%] rounded-xl border border-zinc-200 bg-white p-3 text-sm text-zinc-800 shadow-sm sm:max-w-full">
+      <p className="mb-2 font-medium text-zinc-800">{label}</p>
+      <div className="flex flex-col gap-2">
+        {upcoming.map((b) => {
+          const isSelected = focusInUpcoming && b.id === focusId;
+          const redundant =
+            b.id === focusId && manage.uiPhase === "manageable" && focusInUpcoming;
+          return (
+            <button
+              key={b.id}
+              type="button"
+              disabled={disabled || redundant}
+              onClick={() => onSelect(b.id)}
+              className={`rounded-xl border px-3 py-2 text-left text-sm transition ${
+                isSelected
+                  ? "border-violet-300 bg-[var(--primary-soft)] text-violet-900 ring-2 ring-violet-200"
+                  : "border-zinc-300 bg-white hover:border-violet-300 hover:bg-violet-50/40"
+              } ${disabled || redundant ? "opacity-60" : ""}`}
+            >
+              <span className="font-medium">
+                {new Date(b.startsAt).toLocaleString(intlLocale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </span>
+              <span className="mt-0.5 block text-zinc-600">
+                {b.service.name} · {b.staff.name}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -999,4 +1336,12 @@ function choiceClass(selected: boolean) {
       ? "border-violet-300 bg-[var(--primary-soft)] text-violet-900 ring-2 ring-violet-200"
       : "border-zinc-300 bg-white hover:border-violet-300 hover:bg-violet-50/40"
   }`;
+}
+
+function maskPhone(value: string) {
+  const digitsOnly = value.replace(/\D/g, "");
+  if (digitsOnly.length <= 3) {
+    return digitsOnly;
+  }
+  return `${"*".repeat(digitsOnly.length - 3)}${digitsOnly.slice(-3)}`;
 }

@@ -50,14 +50,14 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - `/` landing page
 - `/chat` customer booking chat
-- `/dashboard` manager booking table (HTTP Basic: set `DASHBOARD_AUTH_SECRET`; optional `DASHBOARD_AUTH_USER`, default `manager`)
+- `/dashboard` manager booking table (HTTP Basic: set `DASHBOARD_AUTH_SECRET`; optional `DASHBOARD_AUTH_USER`, default `admin`). Cancel/reschedule server actions require the same secret.
 - `/r/:token` returning customer deep-link resolver
 
 ## Notes
 
 - UI language defaults to Greek, with optional English via `?lang=en` and in-page language switch.
 - Business locale defaults to Cyprus (`Europe/Nicosia` timezone).
-- Booking accepts Cyprus mobile numbers as **8 digits** without `+357` (e.g. `99XXXXXX`, `96XXXXXX`); they are stored/SMS-sent as `+357…`. Twilio `From`: **`TWILIO_ALPHA_SENDER_ID` first**, then `TWILIO_PHONE_NUMBER` if alpha is unset; optional `TWILIO_MESSAGING_SERVICE_SID` overrides both. Alphanumeric senders must be registered for the destination or Twilio returns **21212**.
+- Booking accepts Cyprus mobile numbers as **8 digits** without `+357` (e.g. `99XXXXXX`, `96XXXXXX`); they are stored/SMS-sent as `+357…`. Twilio `From`: tries **`TWILIO_ALPHA_SENDER_ID` first** when both it and **`TWILIO_PHONE_NUMBER`** are set; if Twilio returns **21212**, the app **retries with the phone number**. Optional `TWILIO_MESSAGING_SERVICE_SID` overrides both when set.
 - If Twilio credentials or sender are not set, SMS is logged to server console (dev fallback).
 - Google Calendar integration:
   - Set `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` in `.env`.

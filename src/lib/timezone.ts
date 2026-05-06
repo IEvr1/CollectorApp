@@ -74,3 +74,38 @@ export function weekdayInTimeZone(isoDate: string, timeZone: string): number {
   }
   return n;
 }
+
+/**
+ * Inclusive UTC start and exclusive UTC end for a salon-local calendar day.
+ * Uses local noon as an anchor when stepping to the next calendar day to reduce DST edge issues.
+ */
+export function salonLocalDayBoundsUtc(isoDate: string, timeZone: string): { start: Date; endExclusive: Date } {
+  const start = zonedWallTimeToUtc(isoDate, 0, 0, 0, timeZone);
+  const noon = zonedWallTimeToUtc(isoDate, 12, 0, 0, timeZone);
+  const nextDayIso = todayIsoInTimeZone(timeZone, new Date(noon.getTime() + 25 * 60 * 60 * 1000));
+  const endExclusive = zonedWallTimeToUtc(nextDayIso, 0, 0, 0, timeZone);
+  return { start, endExclusive };
+}
+
+/** Calendar `YYYY-MM-DD` for `instant` in the given IANA timezone (salon-local "today"). */
+export function todayIsoInTimeZone(timeZone: string, instant: Date = new Date()): string {
+  return isoDateInTimeZone(instant, timeZone);
+}
+
+/** Salon-local calendar date `YYYY-MM-DD` for a UTC instant in `timeZone`. */
+export function isoDateInTimeZone(instant: Date, timeZone: string): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(instant);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  if (!y || !m || !d) {
+    throw new Error("Could not resolve calendar date in timezone");
+  }
+  return `${y}-${m}-${d}`;
+}

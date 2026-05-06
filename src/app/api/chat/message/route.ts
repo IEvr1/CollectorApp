@@ -4,6 +4,7 @@ import { ensureSalonSeed } from "@/lib/bootstrap";
 import { listAvailability } from "@/lib/booking";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
+import { todayIsoInTimeZone } from "@/lib/timezone";
 
 const payloadSchema = z.object({
   serviceId: z.string().optional(),
@@ -36,6 +37,8 @@ export async function POST(request: Request) {
   const selectedStaff =
     salon.staff.find((member) => member.id === body.staffId) ?? salon.staff[0];
 
+  const minBookableDate = todayIsoInTimeZone(salon.timezone);
+
   const slots =
     service && body.date
       ? await listAvailability({
@@ -43,11 +46,13 @@ export async function POST(request: Request) {
           serviceDurationMin: service.durationMin,
           date: body.date,
           timeZone: salon.timezone,
+          salonId: salon.id,
         })
       : [];
 
   return NextResponse.json({
-    salon: { id: salon.id, name: salon.name },
+    salon: { id: salon.id, name: salon.name, timezone: salon.timezone },
+    minBookableDate,
     services: salon.services,
     staff: salon.staff,
     slots,

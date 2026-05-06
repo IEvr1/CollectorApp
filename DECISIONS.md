@@ -6,7 +6,7 @@
 
 ## Current Status
 
-- Landing `/`, booking chat `/chat`, manager table `/dashboard`, επιστροφή πελάτη `/r/:token`.
+- Landing `/`, booking chat `/chat`, manager table `/dashboard`, KPIs `/dashboard/kpis`, επιστροφή πελάτη `/r/:token`.
 - Booking flow: επιλογή υπηρεσίας / staff / ώρας, API κράτησης με όνομα + τηλέφωνο πριν την επιβεβαίωση.
 - SMS επιβεβαίωση με deep link· Twilio ή console fallback αν λείπουν credentials/sender.
 - Prisma: salon, services, staff, availability, customers, bookings, sessions, SMS tokens.
@@ -17,19 +17,31 @@
 
 ---
 
-## Current Focus
+## Current Focus Next Steps
 
-_(συμπλήρωσε — μία εργασία σε εξέλιξη, π.χ. «φίλτρα dashboard»)_
+*******UAT- Testing and fine tuning!
+
+1. KPIs page (μερικώς ολοκληρωμένο): κουμπί "KPIs" στο `/dashboard` ανοίγει `/dashboard/kpis` με presets περιόδου (Σήμερα/7d/30d/90d, default 30d), salon-local timezone.
+
+KPI που έχουν νόημα από νωρίς
+- [x] booking completion rate (μη-ακυρωμένα ÷ ολοκληρωμένα χρονικά, εκτός `PENDING`)
+- [ ] no-show rate — χρειάζεται νέο `BookingStatus.NO_SHOW` ή boolean flag
+- [ ] reschedule success rate — χρειάζεται `RescheduleLog` ή counter στο `Booking`
+- [ ] time-to-book (δευτερόλεπτα) — χρειάζεται linkage `Booking.sessionId` ↔ `ConversationSession`
+- [x] repeat customer booking rate (κρατήσεις περιόδου από πελάτες με προηγούμενη κράτηση)
+
+2. Dashoard να βάλουμε εντολή κουμπί για ακύρωση ραντεβού της ημέρας , εναπομείναντων ραντεβού στην ημέρα και αποστολή μηνυμάτων με λεκτικό λόγω έκτατης ανάγκης και να παρακαλα να επαπρογραμματιστεί το ραντεβού με link, κουμπί για καθορισμό κλειστό σε συγκεκριμένη ημερομηνία /περίοδος/ αργίες... Υλοποίηση
+
 
 ---
 
 ## Next Steps
 
-- [ ] **1.** Φίλτρα στο dashboard — ημερομηνία (default σήμερα), staff, υπηρεσία, status· query params server-side (όχι πάντα take 100).
-- [ ] **2.** Αναζήτηση με τηλέφωνο — φίλτρο σε `phoneE164` (προαιρετικά partial match).
-- [ ] **3.** Ακύρωση ραντεβού — UI + API, `BookingStatus.CANCELLED`, συγχρονισμός Google event όπου ισχύει.
-- [ ] **4.** Προβολή σημερινών ανά staff — grouped UI χωρίς αλλαγή schema.
-- [ ] **5.** Επαναπρογραμματισμός — νέα slot (λογική διαθεσιμότητας όπως στο chat) + ενημέρωση calendar event.
+- [x] **1.** Φίλτρα στο dashboard — ημερομηνία (default σήμερα), staff, υπηρεσία, status· query params server-side (όχι πάντα take 100).
+- [x] **2.** Αναζήτηση με τηλέφωνο — φίλτρο σε `phoneE164` (προαιρετικά partial match).
+- [x] **3.** Ακύρωση ραντεβού — UI + API, `BookingStatus.CANCELLED`, συγχρονισμός Google event όπου ισχύει.
+- [x] **4.** Προβολή σημερινών ανά staff — grouped UI χωρίς αλλαγή schema.
+- [x] **5.** Επαναπρογραμματισμός — νέα slot (λογική διαθεσιμότητας όπως στο chat) + ενημέρωση calendar event.
 
 **Μετά τα 5 (προαιρετικό):** απλή προστασία `/dashboard` (shared secret / `src/proxy.ts`) αν το deploy είναι δημόσιο.
 
