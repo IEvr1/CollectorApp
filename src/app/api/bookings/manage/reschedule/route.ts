@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { format } from "date-fns";
 import { z } from "zod";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
 import { prisma } from "@/lib/prisma";
 import { rescheduleBookingCore } from "@/lib/reschedule-booking";
+import { sendBookingSms } from "@/lib/sms";
 
 const bodySchema = z.object({
   startsAt: z
@@ -35,7 +37,6 @@ export async function POST(request: Request) {
   if (!session?.bookingId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   let startsAt: Date;
   try {
     startsAt = bodySchema.parse(await request.json()).startsAt;
@@ -55,6 +56,14 @@ export async function POST(request: Request) {
   const result = await rescheduleBookingCore(booking, startsAt);
   if (!result.ok) {
     return mapErrorToResponse(result.error);
+  }
+
+  const when = format(result.startsAt, "yyyy-MM-dd HH:mm");
+  const body = `${booking.salon.name}: New time ${when}.`;
+  try {
+    await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });
+  } catch (smsError) {
+    console.error("Manage reschedule SMS failed", smsError);
   }
 
   return NextResponse.json({

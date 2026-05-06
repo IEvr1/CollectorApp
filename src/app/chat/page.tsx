@@ -98,6 +98,9 @@ export default function ChatPage() {
           otherAppointments: "Τα επερχόμενα ραντεβού σας",
           switchAppointmentHint:
             "Έχετε και άλλο ενεργό ραντεβού — επιλέξτε το παρακάτω για διαχείριση.",
+          linkedExistingSameName:
+            "Συνδέσαμε αυτό το ραντεβού με τον υπάρχοντα λογαριασμό σου σε αυτό το κινητό.",
+          linkedExistingNameUpdated: "",
         }
       : {
           welcome: "Welcome! Which service would you like?",
@@ -152,6 +155,9 @@ export default function ChatPage() {
           otherAppointments: "Your upcoming appointments",
           switchAppointmentHint:
             "You have another active appointment — select it below to manage it.",
+          linkedExistingSameName:
+            "We linked this appointment to your existing account for this number.",
+          linkedExistingNameUpdated: "",
         };
 
   const intlLocale = locale === "el" ? "el-CY" : "en-GB";
@@ -176,7 +182,6 @@ export default function ChatPage() {
   const [resultTone, setResultTone] = useState<"success" | "error" | "neutral">(
     "neutral",
   );
-  const [showPostRescheduleSummary, setShowPostRescheduleSummary] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phoneRetryMessage, setPhoneRetryMessage] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -499,12 +504,10 @@ export default function ChatPage() {
       if (!response.ok) {
         setResult(t.cancelFailed);
         setResultTone("error");
-        setShowPostRescheduleSummary(false);
         return;
       }
       setResult(t.cancelledOk);
       setResultTone("success");
-      setShowPostRescheduleSummary(false);
       await loadManageSummary();
     } finally {
       setManageBusy(false);
@@ -532,12 +535,10 @@ export default function ChatPage() {
         const data = await response.json().catch(() => ({}));
         setResult((data as { error?: string }).error ?? t.rescheduleFailed);
         setResultTone("error");
-        setShowPostRescheduleSummary(false);
         return;
       }
       setResult(t.rescheduleOk);
       setResultTone("success");
-      setShowPostRescheduleSummary(true);
       setManageView("home");
       setManageSlot("");
       await loadManageSummary();
@@ -588,7 +589,13 @@ export default function ChatPage() {
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as {
+        error?: string;
+        code?: string;
+        manageUrl?: string;
+        linkedExistingCustomer?: boolean;
+        nameChanged?: boolean;
+      };
       if (!response.ok) {
         if (response.status === 400 && data.code === "INVALID_PHONE") {
           setResult("");
@@ -602,8 +609,16 @@ export default function ChatPage() {
         return;
       }
 
-        setPhoneRetryMessage(null);
-      setResult(`${t.success} ${data.manageUrl}`);
+      setPhoneRetryMessage(null);
+      const linkedNotice =
+        data.linkedExistingCustomer === true
+          ? data.nameChanged === true
+            ? t.linkedExistingNameUpdated
+            : t.linkedExistingSameName
+          : "";
+      setResult(
+        `${linkedNotice}${linkedNotice ? "\n\n" : ""}${t.success} ${data.manageUrl ?? ""}`,
+      );
       setResultTone("success");
       setRebookActive(false);
       if (refreshManageAfterBook) {
@@ -811,7 +826,6 @@ export default function ChatPage() {
                 onClick={() => {
                   setResult("");
                   setResultTone("neutral");
-                  setShowPostRescheduleSummary(false);
                   setManageView("reschedule");
                   setManageSlot("");
                   setDate(todayStr);
@@ -988,7 +1002,6 @@ export default function ChatPage() {
               onClick={() => {
                 setResult("");
                 setResultTone("neutral");
-                setShowPostRescheduleSummary(false);
                 setManageView("home");
                 setManageSlot("");
               }}
@@ -1212,29 +1225,6 @@ export default function ChatPage() {
             }
           />
         )}
-        {showPostRescheduleSummary &&
-          Boolean(result) &&
-          !showReschedule &&
-          showManageHome &&
-          manage?.booking &&
-          resultTone === "success" && (
-            <div className="max-w-[85%] rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800 sm:max-w-full">
-              <p className="font-semibold text-violet-800">{t.bookingSummary}</p>
-              <p>
-                {t.service}: {manage.booking.service.name}
-              </p>
-              <p>
-                {t.staffLabel}: {manage.booking.staff.name}
-              </p>
-              <p>
-                {t.time}:{" "}
-                {new Date(manage.booking.startsAt).toLocaleString(intlLocale, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

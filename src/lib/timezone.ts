@@ -87,6 +87,32 @@ export function salonLocalDayBoundsUtc(isoDate: string, timeZone: string): { sta
   return { start, endExclusive };
 }
 
+/**
+ * Inclusive UTC start (first instant of month) and exclusive UTC end (first instant of next month)
+ * in the salon-local calendar (`month` is 1–12).
+ */
+export function salonLocalMonthBoundsUtc(
+  year: number,
+  month: number,
+  timeZone: string,
+): { start: Date; endExclusive: Date } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (month < 1 || month > 12) {
+    throw new Error("Month must be between 1 and 12");
+  }
+  const firstDayIso = `${year}-${pad(month)}-01`;
+  const start = zonedWallTimeToUtc(firstDayIso, 0, 0, 0, timeZone);
+  let nextYear = year;
+  let nextMonth = month + 1;
+  if (nextMonth > 12) {
+    nextMonth = 1;
+    nextYear += 1;
+  }
+  const nextFirstIso = `${nextYear}-${pad(nextMonth)}-01`;
+  const endExclusive = zonedWallTimeToUtc(nextFirstIso, 0, 0, 0, timeZone);
+  return { start, endExclusive };
+}
+
 /** Calendar `YYYY-MM-DD` for `instant` in the given IANA timezone (salon-local "today"). */
 export function todayIsoInTimeZone(timeZone: string, instant: Date = new Date()): string {
   return isoDateInTimeZone(instant, timeZone);

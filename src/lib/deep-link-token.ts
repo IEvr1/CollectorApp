@@ -46,12 +46,43 @@ export async function createDeepLinkToken(
   options?: { ttlSeconds?: number },
 ): Promise<{ token: string; shortCode: string; expiresAt: Date; ttlSeconds: number }> {
   const ttlSeconds = normalizeTtlSeconds(options?.ttlSeconds);
+  const now = Date.now();
+  const reusable = await prisma.smsLinkToken.findFirst({
+    where: {
+      salonId: payload.salonId,
+      phoneE164: payload.phoneE164,
+      bookingId: payload.bookingId ?? null,
+      shortCode: { not: null },
+      expiresAt: { gt: new Date(now) },
+    },
+    orderBy: { expiresAt: "desc" },
+  });
+
+  if (reusable?.shortCode) {
+    const remainingSec = Math.max(1, Math.floor((reusable.expiresAt.getTime() - now) / 1000));
+    const jti = crypto.randomUUID();
+    const signed = jwt.sign({ ...payload, jti }, smsLinkSigningSecret(), {
+      expiresIn: remainingSec,
+    });
+    const tokenHash = crypto.createHash("sha256").update(signed).digest("hex");
+    await prisma.smsLinkToken.update({
+      where: { id: reusable.id },
+      data: { tokenHash },
+    });
+    return {
+      token: signed,
+      shortCode: reusable.shortCode,
+      expiresAt: reusable.expiresAt,
+      ttlSeconds: remainingSec,
+    };
+  }
+
   const jti = crypto.randomUUID();
   const signed = jwt.sign({ ...payload, jti }, smsLinkSigningSecret(), {
     expiresIn: ttlSeconds,
   });
   const tokenHash = crypto.createHash("sha256").update(signed).digest("hex");
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+  const expiresAt = new Date(now + ttlSeconds * 1000);
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const shortCode = randomShortCode();

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
+import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
 
 /** Vercel cron sends `Authorization: Bearer ${CRON_SECRET}`. Manual calls can use the same Bearer or `x-reminder-secret`. */
 function isAuthorized(request: Request) {
@@ -71,12 +72,10 @@ async function runDispatch() {
       bookingId: booking.id,
     });
 
-    const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+    const base = getSmsLinkBaseUrl();
     const manageUrl = `${base}/l/${shortCode}`;
-    const message = `Reminder: ${booking.salon.name} — ${booking.service.name}. Your appointment is at ${format(
-      booking.startsAt,
-      "PPP p",
-    )} with ${booking.staff.name}. Manage: ${manageUrl} (personal link — do not forward.)`;
+    const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+    const message = `${booking.salon.name}: Reminder ${when}. Link: ${manageUrl}`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });
     await prisma.bookingReminder.update({

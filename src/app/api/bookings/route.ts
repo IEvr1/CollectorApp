@@ -1,5 +1,4 @@
 import { addMinutes, format } from "date-fns";
-import { el, enGB } from "date-fns/locale";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -12,6 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { scheduleBookingReminders } from "@/lib/reminders";
 import { isSalonClosedOnLocalDate } from "@/lib/salon-closure";
 import { sendBookingSms } from "@/lib/sms";
+import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
 import { isoDateInTimeZone } from "@/lib/timezone";
 
 const bookingSchema = z.object({
@@ -56,10 +56,6 @@ export async function POST(request: Request) {
           slotUnavailable: "Η επιλεγμένη ώρα δεν είναι πλέον διαθέσιμη.",
           invalidPhone:
             "Βάλτε έγκυρο κυπριακό κινητό: 8 ψηφία (π.χ. 99XXXXXX χωρίς +357).",
-          smsConfirmed: "Επιβεβαιώθηκε ραντεβού στο",
-          smsWith: "με",
-          smsManage: "Διαχείριση ραντεβού:",
-          smsLinkNote: " (Προσωπικό link — μην προωθείτε.)",
           calendarUnavailable:
             "Η διαθεσιμότητα δεν μπορεί να επιβεβαιωθεί αυτή τη στιγμή. Δοκιμάστε ξανά.",
           salonClosed: "Το κομμωτήριο είναι κλειστά αυτή την ημερομηνία. Επιλέξτε άλλη μέρα.",
@@ -71,15 +67,10 @@ export async function POST(request: Request) {
           slotUnavailable: "Selected slot is no longer available",
           invalidPhone:
             "Enter a valid Cyprus mobile: 8 digits (e.g. 99XXXXXX without +357).",
-          smsConfirmed: "Appointment confirmed at",
-          smsWith: "with",
-          smsManage: "Manage booking:",
-          smsLinkNote: " (Personal link — do not forward.)",
           calendarUnavailable:
             "Availability could not be verified right now. Please try again.",
           salonClosed: "The salon is closed on this date. Please pick another day.",
         };
-  const dateFnsLocale = lang === "el" ? el : enGB;
 
   const salon = await prisma.salon.findFirst();
   if (!salon) {
@@ -155,11 +146,22 @@ export async function POST(request: Request) {
             return { type: "conflict" as const };
           }
 
+          const existing = await tx.customer.findUnique({
+            where: { salonId_phoneE164: { salonId: salon.id, phoneE164 } },
+            select: { id: true, name: true },
+          });
+
           const customer = await tx.customer.upsert({
             where: { salonId_phoneE164: { salonId: salon.id, phoneE164 } },
             create: { salonId: salon.id, name: payload.name, phoneE164 },
             update: { name: payload.name },
           });
+
+          const linkedExistingCustomer = existing !== null;
+          const nameChanged =
+            linkedExistingCustomer &&
+            existing.name.trim().toLocaleLowerCase() !==
+              payload.name.trim().toLocaleLowerCase();
 
           const booking = await tx.booking.create({
             data: {
@@ -174,7 +176,13 @@ export async function POST(request: Request) {
             include: { service: true, staff: true },
           });
 
-          return { type: "ok" as const, booking, customer };
+          return {
+            type: "ok" as const,
+            booking,
+            customer,
+            linkedExistingCustomer,
+            nameChanged,
+          };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -183,7 +191,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: t.slotUnavailable }, { status: 409 });
       }
 
-      const { booking, customer } = result;
+      const { booking, customer, linkedExistingCustomer, nameChanged } = result;
 
       const eventResult = await createGoogleCalendarEvent({
         calendarId: staff.calendarId,
@@ -210,13 +218,10 @@ export async function POST(request: Request) {
         phoneE164,
         bookingId: booking.id,
       });
-      const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+      const base = getSmsLinkBaseUrl();
       const manageUrl = `${base}/l/${shortCode}`;
-      const when = format(startsAt, "PPP p", { locale: dateFnsLocale });
-      const message =
-        lang === "el"
-          ? `${t.smsConfirmed} ${salon.name}. Υπηρεσία: ${booking.service.name}. ${when} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`
-          : `${t.smsConfirmed} ${salon.name}. Service: ${booking.service.name}. ${when} ${t.smsWith} ${booking.staff.name}. ${t.smsManage} ${manageUrl}${t.smsLinkNote}`;
+      const when = format(startsAt, "yyyy-MM-dd HH:mm");
+      const message = `${salon.name}: Booked ${when}. Link: ${manageUrl}`;
 
       try {
         await sendBookingSms({ phoneE164, body: message });
@@ -231,7 +236,12 @@ export async function POST(request: Request) {
 
       await scheduleBookingReminders({ bookingId: booking.id, startsAt: booking.startsAt });
 
-      return NextResponse.json({ bookingId: booking.id, manageUrl });
+      return NextResponse.json({
+        bookingId: booking.id,
+        manageUrl,
+        linkedExistingCustomer,
+        nameChanged,
+      });
     } catch (error) {
       lastError = error;
       if (isSerializationFailure(error)) {

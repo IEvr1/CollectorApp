@@ -1,7 +1,10 @@
 import type { Prisma } from "@prisma/client";
+import type { Locale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import {
+  isoDateInTimeZone,
   salonLocalDayBoundsUtc,
+  salonLocalMonthBoundsUtc,
   todayIsoInTimeZone,
   zonedWallTimeToUtc,
 } from "@/lib/timezone";
@@ -142,4 +145,121 @@ export async function computeKpis(
       rate: repeatDen === 0 ? null : repeatNum / repeatDen,
     },
   };
+}
+
+const CONFIRMED_OR_COMPLETED = ["CONFIRMED", "COMPLETED"] as const;
+
+/**
+ * Lifetime counts: unique customers with at least one CONFIRMED/COMPLETED booking,
+ * and total CONFIRMED/COMPLETED bookings (app channel — all bookings originate from the app).
+ */
+export async function computeAppCustomerStats(
+  salonId: string,
+): Promise<{ customers: number; bookings: number }> {
+  const [distinctRows, bookings] = await Promise.all([
+    prisma.booking.findMany({
+      where: { salonId, status: { in: [...CONFIRMED_OR_COMPLETED] } },
+      distinct: ["customerId"],
+      select: { customerId: true },
+    }),
+    prisma.booking.count({
+      where: { salonId, status: { in: [...CONFIRMED_OR_COMPLETED] } },
+    }),
+  ]);
+  return { customers: distinctRows.length, bookings };
+}
+
+export type MonthlyBookingBucket = {
+  ym: string;
+  label: string;
+  count: number;
+};
+
+function formatMonthBarLabel(ym: string, timezone: string, lang: Locale): string {
+  const parts = ym.split("-");
+  const y = Number(parts[0]);
+  const mo = Number(parts[1]);
+  if (!y || !mo || mo < 1 || mo > 12) {
+    return ym;
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const isoDate = `${y}-${pad(mo)}-15`;
+  const instant = zonedWallTimeToUtc(isoDate, 12, 0, 0, timezone);
+  const locale = lang === "el" ? "el-GR" : "en-US";
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: timezone,
+    month: "short",
+    year: "2-digit",
+  }).format(instant);
+}
+
+/**
+ * Rolling last `monthsBack` salon-local months (ending at current month), counting bookings whose
+ * `startsAt` falls in each month (CONFIRMED + COMPLETED only).
+ */
+export async function computeMonthlyBookings(
+  salonId: string,
+  timezone: string,
+  monthsBack: number,
+  lang: Locale,
+  now: Date = new Date(),
+): Promise<MonthlyBookingBucket[]> {
+  const iso = isoDateInTimeZone(now, timezone);
+  const endYear = Number(iso.slice(0, 4));
+  const endMonth = Number(iso.slice(5, 7));
+  if (!endYear || !endMonth) {
+    throw new Error("Could not parse salon-local date for monthly KPIs");
+  }
+
+  const monthList: Array<{ y: number; m: number; ym: string }> = [];
+  let cy = endYear;
+  let cm = endMonth;
+  for (let i = 0; i < monthsBack; i += 1) {
+    monthList.unshift({
+      y: cy,
+      m: cm,
+      ym: `${cy}-${String(cm).padStart(2, "0")}`,
+    });
+    cm -= 1;
+    if (cm < 1) {
+      cm = 12;
+      cy -= 1;
+    }
+  }
+
+  const oldest = monthList[0];
+  const newest = monthList[monthList.length - 1];
+  if (!oldest || !newest) {
+    return [];
+  }
+
+  const { start: rangeStart } = salonLocalMonthBoundsUtc(oldest.y, oldest.m, timezone);
+  const { endExclusive: rangeEnd } = salonLocalMonthBoundsUtc(newest.y, newest.m, timezone);
+
+  const rows = await prisma.booking.findMany({
+    where: {
+      salonId,
+      status: { in: [...CONFIRMED_OR_COMPLETED] },
+      startsAt: { gte: rangeStart, lt: rangeEnd },
+    },
+    select: { startsAt: true },
+  });
+
+  const counts = new Map<string, number>();
+  for (const row of monthList) {
+    counts.set(row.ym, 0);
+  }
+  for (const row of rows) {
+    const localDate = isoDateInTimeZone(row.startsAt, timezone);
+    const ym = localDate.slice(0, 7);
+    if (counts.has(ym)) {
+      counts.set(ym, (counts.get(ym) ?? 0) + 1);
+    }
+  }
+
+  return monthList.map((row) => ({
+    ym: row.ym,
+    label: formatMonthBarLabel(row.ym, timezone, lang),
+    count: counts.get(row.ym) ?? 0,
+  }));
 }

@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { format } from "date-fns";
-import { el, enGB } from "date-fns/locale";
 import { headers } from "next/headers";
 import { z } from "zod";
 import type { Locale } from "@/lib/locale";
@@ -11,6 +10,7 @@ import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { isDashboardMutationAuthorized } from "@/lib/dashboard-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
+import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
 import { salonLocalDayBoundsUtc } from "@/lib/timezone";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -80,10 +80,8 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
     orderBy: { startsAt: "asc" },
   });
 
-  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+  const base = getSmsLinkBaseUrl();
   const ttlSeconds = emergencyTtlSeconds();
-  const dateFnsLocale = lang === "el" ? el : enGB;
-
   let smsSent = 0;
   const smsFailures: string[] = [];
 
@@ -98,11 +96,8 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
         { ttlSeconds },
       );
       const manageUrl = `${base}/l/${shortCode}`;
-      const when = format(booking.startsAt, "PPP p", { locale: dateFnsLocale });
-      const body =
-        lang === "el"
-          ? `${salon.name}: Λόγω έκτακτης ανάγκης ακυρώθηκε το ραντεβού σας (${booking.service.name}, ${when}, ${booking.staff.name}). Παρακαλούμε επαναπρογραμματίστε εδώ: ${manageUrl} (προσωπικό link — μην προωθείτε.)`
-          : `${salon.name}: Due to an emergency your appointment was cancelled (${booking.service.name}, ${when}, ${booking.staff.name}). Please reschedule here: ${manageUrl} (personal link — do not forward.)`;
+      const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+      const body = `${salon.name}: Cancelled ${when}. Link: ${manageUrl}`;
 
       await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });
       smsSent += 1;

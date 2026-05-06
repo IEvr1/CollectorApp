@@ -14,14 +14,15 @@
 - Google Calendar: busy exclusion + events για confirmed bookings (service account + `Staff.calendarId`).
 - Υπενθυμίσεις: πολιτική στο README· `POST /api/reminders/dispatch`· cron στο `vercel.json` (λεπτά 0 και 45).
 - Seed δεδομένων αυτόματα στην πρώτη χρήση API/σελίδων.
+- KPIs `/dashboard/kpis`: επιπλέον **πελάτες εφαρμογής** (μοναδικοί με ≥1 CONFIRMED/COMPLETED) + **σύνολο κρατήσεων**· bar chart **τελευταίων 12 μηνών** (CONFIRMED/COMPLETED, bucket ανά `startsAt` σε salon timezone).
 
 ---
 
 ## Current Focus Next Steps
 
-*******UAT- Testing and fine tuning!
+*******UAT- Testing and fine tuning! infopip 0.039
 
-1. KPIs page (μερικώς ολοκληρωμένο): κουμπί "KPIs" στο `/dashboard` ανοίγει `/dashboard/kpis` με presets περιόδου (Σήμερα/7d/30d/90d, default 30d), salon-local timezone.
+1. KPIs page: κουμπί "KPIs" στο `/dashboard` ανοίγει `/dashboard/kpis` με presets περιόδου (Σήμερα/7d/30d/90d, default 30d), salon-local timezone· επιπλέον διαχρονικά KPI πελατών + μηνιαίο bar chart (12 μήνες).
 
 KPI που έχουν νόημα από νωρίς
 - [x] booking completion rate (μη-ακυρωμένα ÷ ολοκληρωμένα χρονικά, εκτός `PENDING`)
@@ -124,6 +125,26 @@ no-show rate
 reschedule success rate
 time-to-book (δευτερόλεπτα)
 repeat customer booking rate
+
+
+
+## τιμολόγιση
+
+Option 1 — Hybrid
+€25  base fee
+€0.15/SMS
+
+Cost
+$0.0864
+
+Option 2-Credit system (δουλεύει πολύ καλά) expiry 6 ή 12 μήνες.. να το βρω
+€20 → 100 SMS
+€50 → 350 SMS
+
+👉 φαίνεται σαν “bulk discount”
+👉 αλλά ελέγχεις margin
+
+
 
 
 Database & Prisma:

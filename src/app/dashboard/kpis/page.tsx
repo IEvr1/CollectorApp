@@ -1,10 +1,23 @@
 import Link from "next/link";
 import { ensureSalonSeed } from "@/lib/bootstrap";
-import { computeKpis, parsePeriod, type KpiRatio, type Period } from "@/lib/kpis";
+import {
+  computeAppCustomerStats,
+  computeKpis,
+  computeMonthlyBookings,
+  parsePeriod,
+  type KpiRatio,
+  type MonthlyBookingBucket,
+  type Period,
+} from "@/lib/kpis";
 import { parseLocale, type Locale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 
 const PERIOD_OPTIONS: readonly Period[] = ["today", "7d", "30d", "90d"];
+
+function formatInteger(value: number, lang: Locale): string {
+  const locale = lang === "el" ? "el-GR" : "en-US";
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
+}
 
 export default async function KpisPage({
   searchParams,
@@ -37,6 +50,15 @@ export default async function KpisPage({
             `${num} από ${den} κρατήσεις από επιστρέφοντες πελάτες`,
           empty: "—",
           emptyHint: "Δεν υπάρχουν επαρκή δεδομένα για την περίοδο.",
+          customersTitle: "Πελάτες εφαρμογής",
+          customersDesc:
+            "Μοναδικοί πελάτες με τουλάχιστον ένα επιβεβαιωμένο ή ολοκληρωμένο ραντεβού (συνολικά).",
+          bookingsLabel: (n: number) =>
+            `${formatInteger(n, "el")} ραντεβού (επιβεβαιωμένα / ολοκληρωμένα)`,
+          monthlyTitle: "Ραντεβού ανά μήνα",
+          monthlyDesc:
+            "Τελευταίοι 12 μήνες — κατά μήνα με βάση την ημερομηνία έναρξης του ραντεβού (επιβεβαιωμένα και ολοκληρωμένα).",
+          noMonthlyData: "Δεν υπάρχουν ακόμα ραντεβού σε αυτό το διάστημα.",
         }
       : {
           title: "KPIs",
@@ -58,6 +80,15 @@ export default async function KpisPage({
             `${num} of ${den} bookings from returning customers`,
           empty: "—",
           emptyHint: "Not enough data for this period.",
+          customersTitle: "App customers",
+          customersDesc:
+            "Unique customers with at least one confirmed or completed booking (all time).",
+          bookingsLabel: (n: number) =>
+            `${formatInteger(n, "en")} bookings (confirmed / completed)`,
+          monthlyTitle: "Bookings per month",
+          monthlyDesc:
+            "Last 12 months — by appointment start month (confirmed and completed).",
+          noMonthlyData: "No bookings in this window yet.",
         };
 
   await ensureSalonSeed();
@@ -70,7 +101,11 @@ export default async function KpisPage({
     );
   }
 
-  const kpis = await computeKpis(salon.id, salon.timezone, period);
+  const [kpis, customerStats, monthly] = await Promise.all([
+    computeKpis(salon.id, salon.timezone, period),
+    computeAppCustomerStats(salon.id),
+    computeMonthlyBookings(salon.id, salon.timezone, 12, lang),
+  ]);
 
   const langSuffix = lang === "en" ? "&lang=en" : "";
   const dashboardHref = `/dashboard${lang === "en" ? "?lang=en" : ""}`;
@@ -136,7 +171,133 @@ export default async function KpisPage({
           lang={lang}
         />
       </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-12">
+        <div className="lg:col-span-4">
+          <CustomersCard
+            title={t.customersTitle}
+            description={t.customersDesc}
+            customerCount={customerStats.customers}
+            bookingsLine={t.bookingsLabel(customerStats.bookings)}
+            lang={lang}
+          />
+        </div>
+        <div className="lg:col-span-8">
+          <MonthlyBookingsChart
+            title={t.monthlyTitle}
+            description={t.monthlyDesc}
+            buckets={monthly}
+            emptyHint={t.noMonthlyData}
+            lang={lang}
+          />
+        </div>
+      </div>
     </div>
+  );
+}
+
+function CustomersCard({
+  title,
+  description,
+  customerCount,
+  bookingsLine,
+  lang,
+}: {
+  title: string;
+  description: string;
+  customerCount: number;
+  bookingsLine: string;
+  lang: Locale;
+}) {
+  const display = formatInteger(customerCount, lang);
+  return (
+    <section className="flex h-full min-h-[200px] flex-col gap-3 rounded-2xl border border-zinc-200/80 bg-white/90 p-5 shadow-sm">
+      <header className="flex flex-col gap-1">
+        <h2 className="text-sm font-semibold text-zinc-700">{title}</h2>
+        <p className="text-xs text-zinc-500">{description}</p>
+      </header>
+      <div className="text-4xl font-semibold tracking-tight text-violet-700">{display}</div>
+      <p className="text-xs text-zinc-600">{bookingsLine}</p>
+    </section>
+  );
+}
+
+const MONTHLY_CHART_MAX_PX = 168;
+
+function MonthlyBookingsChart({
+  title,
+  description,
+  buckets,
+  emptyHint,
+  lang,
+}: {
+  title: string;
+  description: string;
+  buckets: MonthlyBookingBucket[];
+  emptyHint: string;
+  lang: Locale;
+}) {
+  const rawMax = Math.max(0, ...buckets.map((b) => b.count));
+  const hasAny = rawMax > 0;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-zinc-200/80 bg-white/90 p-5 shadow-sm">
+      <header className="flex flex-col gap-1">
+        <h2 className="text-sm font-semibold text-zinc-700">{title}</h2>
+        <p className="text-xs text-zinc-500">{description}</p>
+      </header>
+
+      <div className="relative min-h-[260px]">
+        <div className="pointer-events-none absolute inset-x-0 top-8 bottom-[4.5rem] flex flex-col justify-between">
+          <div className="border-t border-dashed border-zinc-200/90" />
+          <div className="border-t border-dashed border-zinc-200/90" />
+          <div className="border-t border-dashed border-zinc-200/90" />
+        </div>
+
+        <div className="relative flex h-[220px] gap-1 border-b border-zinc-200 pt-6">
+          {buckets.map((b, index) => {
+            const barPx =
+              !hasAny || b.count === 0
+                ? 0
+                : Math.max(2, Math.round((b.count / rawMax) * MONTHLY_CHART_MAX_PX));
+            const tooltip =
+              lang === "el"
+                ? `${b.label}: ${b.count} ραντεβού`
+                : `${b.label}: ${b.count} bookings`;
+            return (
+              <div
+                key={b.ym}
+                className="flex min-h-0 min-w-0 flex-1 flex-col justify-end"
+                title={tooltip}
+              >
+                <div className="flex flex-1 flex-col justify-end gap-1">
+                  <span className="h-4 text-center text-[10px] font-medium tabular-nums text-zinc-600">
+                    {b.count > 0 ? formatInteger(b.count, lang) : ""}
+                  </span>
+                  <div className="flex h-[168px] w-full flex-col justify-end">
+                    <div
+                      className="w-full rounded-t-md bg-gradient-to-t from-violet-600 to-violet-400 shadow-sm transition hover:from-violet-700 hover:to-violet-500"
+                      style={{
+                        height: `${barPx}px`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <span
+                  className={`mt-2 block max-w-full truncate text-center text-[9px] leading-tight text-zinc-500 ${
+                    index % 2 !== 0 ? "hidden sm:block" : ""
+                  }`}
+                >
+                  {b.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {!hasAny ? <p className="mt-3 text-xs text-zinc-500">{emptyHint}</p> : null}
+      </div>
+    </section>
   );
 }
 

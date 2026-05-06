@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { format } from "date-fns";
 import { deleteGoogleCalendarEvent } from "@/lib/google-calendar";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
 import { prisma } from "@/lib/prisma";
+import { sendBookingSms } from "@/lib/sms";
 
 export async function POST() {
   const session = await getManageSessionPayload();
@@ -11,7 +13,7 @@ export async function POST() {
 
   const booking = await prisma.booking.findFirst({
     where: { id: session.bookingId, salonId: session.salonId },
-    include: { customer: true, staff: true },
+    include: { customer: true, staff: true, service: true, salon: true },
   });
 
   if (!booking || booking.customer.phoneE164 !== session.phoneE164) {
@@ -42,6 +44,15 @@ export async function POST() {
       data: { status: "CANCELLED", googleEventId: null },
     }),
   ]);
+
+  const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+  const body = `${booking.salon.name}: Cancelled ${when}.`;
+
+  try {
+    await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });
+  } catch (smsError) {
+    console.error("Manage cancel SMS failed", smsError);
+  }
 
   return NextResponse.json({ ok: true });
 }
