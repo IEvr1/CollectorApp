@@ -71,6 +71,7 @@ export default async function DashboardPage({
           mutationsOff:
             "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_LINK_SECRET.",
           nav: {
+            newBooking: "Καταχώρηση Ραντεβού",
             holidays: "Αργίες",
             emergency: "Ακύρωση",
           },
@@ -113,6 +114,7 @@ export default async function DashboardPage({
           mutationsOff:
             "Cancel and reschedule are disabled until DASHBOARD_LINK_SECRET is set.",
           nav: {
+            newBooking: "Add Booking",
             holidays: "Holidays",
             emergency: "Cancel",
           },
@@ -190,10 +192,12 @@ export default async function DashboardPage({
 
   const mutationsAllowed = isDashboardLinkAuthAvailable();
 
+  const newBookingHref = `/chat?lang=${lang}`;
   const kpisHref = `/dashboard/kpis${lang === "en" ? "?lang=en" : ""}`;
   const closuresHref = `/dashboard/closures${lang === "en" ? "?lang=en" : ""}`;
   const emergencyHref = `/dashboard/emergency?date=${dateStr}${lang === "en" ? "&lang=en" : ""}`;
   const navButtons = [
+    { href: newBookingHref, label: t.nav.newBooking, openInNewWindow: true },
     { href: kpisHref, label: "KPIs" },
     { href: closuresHref, label: t.nav.holidays },
     { href: emergencyHref, label: t.nav.emergency },
@@ -220,6 +224,8 @@ export default async function DashboardPage({
             <Link
               key={button.href}
               href={button.href}
+              target={button.openInNewWindow ? "_blank" : undefined}
+              rel={button.openInNewWindow ? "noreferrer" : undefined}
               className="rounded-xl bg-violet-600 px-3 py-1.5 text-sm font-medium text-white shadow transition hover:bg-violet-700"
             >
               {button.label}

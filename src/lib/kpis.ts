@@ -176,9 +176,9 @@ export type MonthlyBookingBucket = {
 };
 
 function formatMonthBarLabel(ym: string, timezone: string, lang: Locale): string {
-  const parts = ym.split("-");
-  const y = Number(parts[0]);
-  const mo = Number(parts[1]);
+  const ymParts = ym.split("-");
+  const y = Number(ymParts[0]);
+  const mo = Number(ymParts[1]);
   if (!y || !mo || mo < 1 || mo > 12) {
     return ym;
   }
@@ -186,11 +186,18 @@ function formatMonthBarLabel(ym: string, timezone: string, lang: Locale): string
   const isoDate = `${y}-${pad(mo)}-15`;
   const instant = zonedWallTimeToUtc(isoDate, 12, 0, 0, timezone);
   const locale = lang === "el" ? "el-GR" : "en-US";
-  return new Intl.DateTimeFormat(locale, {
+  const dateParts = new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     month: "short",
     year: "2-digit",
-  }).format(instant);
+  }).formatToParts(instant);
+  const month = dateParts.find((part) => part.type === "month")?.value.replace(/\.$/, "");
+  const year = dateParts.find((part) => part.type === "year")?.value;
+
+  if (!month || !year) {
+    return ym;
+  }
+  return `${month}-${year}`;
 }
 
 /**

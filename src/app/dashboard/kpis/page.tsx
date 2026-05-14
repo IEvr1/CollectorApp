@@ -284,8 +284,8 @@ function MonthlyBookingsChart({
                   </div>
                 </div>
                 <span
-                  className={`mt-2 block max-w-full truncate text-center text-[9px] leading-tight text-zinc-500 ${
-                    index % 2 !== 0 ? "hidden sm:block" : ""
+                  className={`mt-2 block max-w-full truncate text-center text-[10px] font-medium leading-tight text-zinc-600 ${
+                    index % 2 !== 0 && b.count === 0 ? "hidden sm:block" : ""
                   }`}
                 >
                   {b.label}
