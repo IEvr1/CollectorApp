@@ -237,7 +237,7 @@ export async function POST(request: Request) {
         }).catch(() => {});
         await prisma.booking.delete({ where: { id: booking.id } }).catch(() => {});
         return NextResponse.json(
-          { error: lang === "el" ? "Αποτυχία αποστολής SMS. Δοκιμάστε ξανά." : "SMS failed. Please try again." },
+          { error: lang === "el" ? "Αποτυχία κράτησης. Δοκιμάστε ξανά." : "Booking failed. Please try again." },
           { status: 502 },
         );
       }

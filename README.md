@@ -69,7 +69,7 @@ Open [http://localhost:3002](http://localhost:3002).
   - Availability excludes busy ranges from each staff calendar, and confirmed bookings create events in that same calendar.
 - Reminder policy:
   - Reminders are sent in a daily morning batch at 07:30 salon-local time.
-  - Confirmed appointments can receive one reminder on the appointment day and one reminder on the previous day.
+  - Confirmed appointments can receive one reminder on the appointment day only.
   - If the 07:30 reminder time for a booking has already passed, that reminder is not scheduled.
 - Trigger reminders via `GET` or `POST /api/reminders/dispatch` (Vercel Cron uses **GET**). In **production**, **`REMINDER_DISPATCH_SECRET`** is **required** (otherwise dispatch returns 401). Set **`CRON_SECRET`** in Vercel so cron sends `Authorization: Bearer <CRON_SECRET>` (often the same value as `REMINDER_DISPATCH_SECRET`). Manual calls can use `x-reminder-secret` or `Authorization: Bearer` with either secret. In local dev, if neither secret is set, the route stays **unauthenticated** for convenience.
 - `vercel.json` includes a Hobby-compatible daily cron schedule `30 4 * * *` (UTC) to run the morning reminder batch. Vercel Cron is UTC-only; for Cyprus this matches 07:30 during daylight saving time, and dispatch uses a short lookahead so standard-time reminders are still caught.
