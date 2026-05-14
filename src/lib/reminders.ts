@@ -1,26 +1,30 @@
-import { subHours, subMinutes } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { isoDateInTimeZone, zonedWallTimeToUtc } from "@/lib/timezone";
 
-const REMINDER_24HOURS_MS = 24 * 60 * 60 * 1000;
-const REMINDER_2H30_MS = (2 * 60 + 30) * 60 * 1000;
+const REMINDER_HOUR = 7;
+const REMINDER_MINUTE = 30;
 
-export function computeReminderTimes(startsAt: Date, now = new Date()) {
-  const leadTimeMs = startsAt.getTime() - now.getTime();
-
-  if (leadTimeMs < REMINDER_2H30_MS) {
-    return [];
+function addCalendarDays(isoDate: string, days: number) {
+  const [year, month, day] = isoDate.split("-").map((value) => Number(value));
+  if (!year || !month || !day) {
+    throw new Error("Invalid date string (expected YYYY-MM-DD)");
   }
 
-  const reminders = [subMinutes(startsAt, 150)];
-  if (leadTimeMs >= REMINDER_24HOURS_MS) {
-    reminders.unshift(subHours(startsAt, 24));
-  }
-
-  return reminders;
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
 }
 
-export async function scheduleBookingReminders(params: { bookingId: string; startsAt: Date }) {
-  const reminderTimes = computeReminderTimes(params.startsAt);
+export function computeReminderTimes(startsAt: Date, timeZone: string, now = new Date()) {
+  const appointmentDate = isoDateInTimeZone(startsAt, timeZone);
+  const reminderDates = [addCalendarDays(appointmentDate, -1), appointmentDate];
+
+  const reminders = reminderDates.map((date) => zonedWallTimeToUtc(date, REMINDER_HOUR, REMINDER_MINUTE, 0, timeZone));
+
+  return reminders.filter((sendAt) => sendAt > now && sendAt < startsAt);
+}
+
+export async function scheduleBookingReminders(params: { bookingId: string; startsAt: Date; timeZone: string }) {
+  const reminderTimes = computeReminderTimes(params.startsAt, params.timeZone);
   if (reminderTimes.length === 0) {
     return;
   }

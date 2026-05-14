@@ -242,7 +242,11 @@ export async function POST(request: Request) {
         );
       }
 
-      await scheduleBookingReminders({ bookingId: booking.id, startsAt: booking.startsAt });
+      await scheduleBookingReminders({
+        bookingId: booking.id,
+        startsAt: booking.startsAt,
+        timeZone: salon.timezone,
+      });
 
       return NextResponse.json({
         bookingId: booking.id,

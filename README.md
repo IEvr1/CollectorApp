@@ -67,11 +67,11 @@ Open [http://localhost:3002](http://localhost:3002).
     - `npm run set:staff-calendars -- "Aisha=aisha@group.calendar.google.com" "Mona=mona@group.calendar.google.com" "Sara=sara@group.calendar.google.com"`
   - Availability excludes busy ranges from each staff calendar, and confirmed bookings create events in that same calendar.
 - Reminder policy:
-  - If appointment is less than 2h30m away, no reminder is sent.
-  - If appointment is from 2h30m to less than 24h away, one reminder is sent at 2h30m before.
-  - If appointment is 24h+ away, two reminders are sent (24h before and 2h30m before).
+  - Reminders are sent in a daily morning batch at 07:30 salon-local time.
+  - Confirmed appointments can receive one reminder on the appointment day and one reminder on the previous day.
+  - If the 07:30 reminder time for a booking has already passed, that reminder is not scheduled.
 - Trigger reminders via `GET` or `POST /api/reminders/dispatch` (Vercel Cron uses **GET**). In **production**, **`REMINDER_DISPATCH_SECRET`** is **required** (otherwise dispatch returns 401). Set **`CRON_SECRET`** in Vercel so cron sends `Authorization: Bearer <CRON_SECRET>` (often the same value as `REMINDER_DISPATCH_SECRET`). Manual calls can use `x-reminder-secret` or `Authorization: Bearer` with either secret. In local dev, if neither secret is set, the route stays **unauthenticated** for convenience.
-- `vercel.json` includes a cron schedule `0,45 * * * *` to run reminder checks at minute 0 and 45 every hour.
+- `vercel.json` includes a Hobby-compatible daily cron schedule `30 4 * * *` (UTC) to run the morning reminder batch. Vercel Cron is UTC-only; for Cyprus this matches 07:30 during daylight saving time, and dispatch uses a short lookahead so standard-time reminders are still caught.
 - **`DASHBOARD_LINK_SECRET`**: signs business dashboard links. Run `npm run dashboard:link` to print a `/dashboard?code=...` URL valid for 90 days. Opening that URL stores an httpOnly dashboard cookie and redirects to `/dashboard` without showing the code. In production this secret is required for dashboard access; `/` and `/chat` stay public.
 - **`SMS_LINK_SECRET`**: required in **production** for signing deep-link JWTs in SMS; keep it stable across deploys or old links break.
 - Seed data is inserted automatically when API/pages run for the first time.

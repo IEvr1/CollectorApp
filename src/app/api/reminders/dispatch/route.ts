@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
 import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
 
+// Vercel cron is UTC-only; this keeps the daily run from missing 07:30 local reminders around DST.
+const DISPATCH_LOOKAHEAD_MS = 90 * 60 * 1000;
+
 /** Vercel cron sends `Authorization: Bearer ${CRON_SECRET}`. Manual calls can use the same Bearer or `x-reminder-secret`. */
 function isAuthorized(request: Request) {
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -41,8 +44,9 @@ function isAuthorized(request: Request) {
 
 async function runDispatch() {
   const now = new Date();
+  const dispatchThrough = new Date(now.getTime() + DISPATCH_LOOKAHEAD_MS);
   const reminders = await prisma.bookingReminder.findMany({
-    where: { sentAt: null, sendAt: { lte: now } },
+    where: { sentAt: null, sendAt: { lte: dispatchThrough } },
     include: {
       booking: {
         include: { customer: true, salon: true },
@@ -54,12 +58,18 @@ async function runDispatch() {
 
   let sent = 0;
   let skipped = 0;
+  const processedBookingIds = new Set<string>();
 
   for (const reminder of reminders) {
     const booking = reminder.booking;
+    if (processedBookingIds.has(booking.id)) {
+      continue;
+    }
+    processedBookingIds.add(booking.id);
+
     if (booking.status !== "CONFIRMED" || booking.startsAt <= now) {
-      await prisma.bookingReminder.update({
-        where: { id: reminder.id },
+      await prisma.bookingReminder.updateMany({
+        where: { bookingId: booking.id, sentAt: null, sendAt: { lte: dispatchThrough } },
         data: { sentAt: new Date() },
       });
       skipped += 1;
@@ -78,8 +88,8 @@ async function runDispatch() {
     const message = `${booking.salon.name}: Reminder ${when}. Link: ${manageUrl}`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });
-    await prisma.bookingReminder.update({
-      where: { id: reminder.id },
+    await prisma.bookingReminder.updateMany({
+      where: { bookingId: booking.id, sentAt: null, sendAt: { lte: dispatchThrough } },
       data: { sentAt: new Date() },
     });
     sent += 1;

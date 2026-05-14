@@ -148,7 +148,11 @@ export async function rescheduleBookingCore(
       await prisma.bookingReminder.deleteMany({
         where: { bookingId: booking.id, sentAt: null },
       });
-      await scheduleBookingReminders({ bookingId: booking.id, startsAt });
+      await scheduleBookingReminders({
+        bookingId: booking.id,
+        startsAt,
+        timeZone: booking.salon.timezone,
+      });
 
       return { ok: true, startsAt, endsAt };
     } catch (error) {
