@@ -4,6 +4,7 @@ import { ensureSalonSeed } from "@/lib/bootstrap";
 import { listAvailability } from "@/lib/booking";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
+import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
 import { todayIsoInTimeZone } from "@/lib/timezone";
 
 const payloadSchema = z.object({
@@ -36,18 +37,37 @@ export async function POST(request: Request) {
   const service = salon.services.find((item) => item.id === body.serviceId);
   const selectedStaff =
     salon.staff.find((member) => member.id === body.staffId) ?? salon.staff[0];
+  const useAnyAvailableStaff = body.staffId === ANY_AVAILABLE_STAFF_ID;
 
   const minBookableDate = todayIsoInTimeZone(salon.timezone);
 
   const slots =
-    service && body.date
-      ? await listAvailability({
-          staffId: selectedStaff.id,
-          serviceDurationMin: service.durationMin,
-          date: body.date,
-          timeZone: salon.timezone,
-          salonId: salon.id,
-        })
+    service && body.date && selectedStaff
+      ? useAnyAvailableStaff
+        ? Array.from(
+            new Set(
+              (
+                await Promise.all(
+                  salon.staff.map((member) =>
+                    listAvailability({
+                      staffId: member.id,
+                      serviceDurationMin: service.durationMin,
+                      date: body.date!,
+                      timeZone: salon.timezone,
+                      salonId: salon.id,
+                    }),
+                  ),
+                )
+              ).flat(),
+            ),
+          ).sort()
+        : await listAvailability({
+            staffId: selectedStaff.id,
+            serviceDurationMin: service.durationMin,
+            date: body.date,
+            timeZone: salon.timezone,
+            salonId: salon.id,
+          })
       : [];
 
   return NextResponse.json({

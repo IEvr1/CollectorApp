@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { normalizePhone } from "@/lib/phone";
 import { parseLocale, type Locale } from "@/lib/locale";
+import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
 import { todayIsoInTimeZone } from "@/lib/timezone";
 
 type Service = { id: string; name: string; durationMin: number };
@@ -95,6 +96,7 @@ export default function ChatPage() {
           bookAgain: "Κλείστε νέο ραντεβού",
           manageDisclaimer: "Προσωπικό link — Μην το προωθείτε.",
           staffLabel: "Staff",
+          anyAvailableStaff: "Οποιοσδήποτε διαθέσιμος",
           otherAppointments: "Τα επερχόμενα ραντεβού σας",
           switchAppointmentHint:
             "Έχετε και άλλο ενεργό ραντεβού — επιλέξτε το παρακάτω για διαχείριση.",
@@ -152,6 +154,7 @@ export default function ChatPage() {
           manageDisclaimer:
             "Personal link — do not forward. Anyone with this link can manage the appointment for the phone number that received the SMS.",
           staffLabel: "Staff",
+          anyAvailableStaff: "Any available",
           otherAppointments: "Your upcoming appointments",
           switchAppointmentHint:
             "You have another active appointment — select it below to manage it.",
@@ -381,6 +384,8 @@ export default function ChatPage() {
     () => staff.find((item) => item.id === staffId),
     [staff, staffId],
   );
+  const selectedStaffName =
+    staffId === ANY_AVAILABLE_STAFF_ID ? t.anyAvailableStaff : (selectedStaff?.name ?? "");
 
   const { morningSlots, afternoonSlots } = useMemo(() => {
     const source = manageView === "reschedule" ? manageSlots : slots;
@@ -1075,10 +1080,17 @@ export default function ChatPage() {
 
             {hasService && selectedService && <Bubble role="user" text={selectedService.name} />}
 
+            {hasService && selectedService && <Bubble role="assistant" text={t.pickStaff} />}
+
             {hasService && selectedService && !hasStaff && (
-              <>
-                <Bubble role="assistant" text={t.pickStaff} />
                 <CardGrid>
+                  <button
+                    type="button"
+                    onClick={() => selectStaff(ANY_AVAILABLE_STAFF_ID)}
+                    className={choiceClass(false)}
+                  >
+                    {t.anyAvailableStaff}
+                  </button>
                   {staff.map((member) => (
                     <button
                       key={member.id}
@@ -1090,12 +1102,11 @@ export default function ChatPage() {
                     </button>
                   ))}
                 </CardGrid>
-              </>
             )}
 
-            {hasStaff && selectedStaff && (
+            {hasStaff && selectedStaffName && (
               <>
-                <Bubble role="user" text={selectedStaff.name} />
+                <Bubble role="user" text={selectedStaffName} />
                 <Bubble role="assistant" text={t.pickDate} />
                 <div className="max-w-[85%]">
                   <input

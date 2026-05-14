@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ensureSalonSeed } from "@/lib/bootstrap";
+import { listAvailability } from "@/lib/booking";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { normalizePhone } from "@/lib/phone";
 import {
@@ -16,6 +17,7 @@ import { scheduleBookingReminders } from "@/lib/reminders";
 import { isSalonClosedOnLocalDate } from "@/lib/salon-closure";
 import { sendBookingSms } from "@/lib/sms";
 import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
+import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
 import { isoDateInTimeZone } from "@/lib/timezone";
 
 const bookingSchema = z.object({
@@ -88,14 +90,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t.serviceMissing }, { status: 404 });
   }
 
-  const staff = await prisma.staff.findUnique({
-    where: { id: payload.staffId },
-    select: { id: true, name: true, calendarId: true, salonId: true },
-  });
-  if (!staff || staff.salonId !== salon.id) {
-    return NextResponse.json({ error: t.staffMissing }, { status: 404 });
-  }
-
   const startsAt = payload.startsAt;
   const endsAt = addMinutes(startsAt, service.durationMin);
   const now = new Date();
@@ -106,6 +100,44 @@ export async function POST(request: Request) {
   const localDate = isoDateInTimeZone(startsAt, salon.timezone);
   if (await isSalonClosedOnLocalDate(salon.id, localDate)) {
     return NextResponse.json({ error: t.salonClosed }, { status: 409 });
+  }
+
+  const staffSelect = { id: true, name: true, calendarId: true, salonId: true } as const;
+  const useAnyAvailableStaff = payload.staffId === ANY_AVAILABLE_STAFF_ID;
+  let staff: { id: string; name: string; calendarId: string | null; salonId: string } | null = null;
+
+  if (useAnyAvailableStaff) {
+    const candidates = await prisma.staff.findMany({
+      where: { salonId: salon.id },
+      select: staffSelect,
+      orderBy: { createdAt: "asc" },
+    });
+
+    for (const candidate of candidates) {
+      const candidateSlots = await listAvailability({
+        staffId: candidate.id,
+        serviceDurationMin: service.durationMin,
+        date: localDate,
+        timeZone: salon.timezone,
+        salonId: salon.id,
+      });
+      if (candidateSlots.includes(startsAt.toISOString())) {
+        staff = candidate;
+        break;
+      }
+    }
+  } else {
+    staff = await prisma.staff.findUnique({
+      where: { id: payload.staffId },
+      select: staffSelect,
+    });
+  }
+
+  if (!staff || staff.salonId !== salon.id) {
+    return NextResponse.json(
+      { error: useAnyAvailableStaff ? t.slotUnavailable : t.staffMissing },
+      { status: useAnyAvailableStaff ? 409 : 404 },
+    );
   }
 
   const freeBusy = await listGoogleBusyRanges({
@@ -140,7 +172,7 @@ export async function POST(request: Request) {
         async (tx) => {
           const collision = await tx.booking.findFirst({
             where: {
-              staffId: payload.staffId,
+              staffId: staff.id,
               status: { in: ["PENDING", "CONFIRMED"] },
               startsAt: { lt: endsAt },
               endsAt: { gt: startsAt },
@@ -172,7 +204,7 @@ export async function POST(request: Request) {
               salonId: salon.id,
               customerId: customer.id,
               serviceId: payload.serviceId,
-              staffId: payload.staffId,
+              staffId: staff.id,
               startsAt,
               endsAt,
               status: "CONFIRMED",
