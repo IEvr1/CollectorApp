@@ -27,13 +27,13 @@ function emergencyTtlSeconds(): number {
 
 function unauthorizedMessage(lang: Locale) {
   return lang === "el"
-    ? "Η ενέργεια απαιτεί Basic auth (DASHBOARD_AUTH_SECRET)."
-    : "This action requires Basic auth (DASHBOARD_AUTH_SECRET).";
+    ? "Η ενέργεια απαιτεί έγκυρο dashboard link."
+    : "This action requires a valid dashboard link.";
 }
 
 export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 

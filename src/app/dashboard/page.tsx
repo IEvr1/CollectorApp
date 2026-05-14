@@ -11,6 +11,7 @@ import { DashboardClosuresPanel } from "@/app/dashboard/dashboard-closures-panel
 import { DashboardEmergencyPanel } from "@/app/dashboard/dashboard-emergency-panel";
 import { DashboardFilters } from "@/app/dashboard/dashboard-filters";
 import { DashboardBookingsView } from "@/app/dashboard/dashboard-bookings-view";
+import { isDashboardLinkAuthAvailable } from "@/lib/dashboard-auth";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -66,7 +67,7 @@ export default async function DashboardPage({
             errorPrefix: "",
           },
           mutationsOff:
-            "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_AUTH_SECRET (Basic auth).",
+            "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_LINK_SECRET.",
           emergency: {
             button: "Έκτακτη ακύρωση ημέρας…",
             step1Title: "Έκτακτη ακύρωση όλων των ραντεβού της ημέρας",
@@ -136,7 +137,7 @@ export default async function DashboardPage({
             errorPrefix: "",
           },
           mutationsOff:
-            "Cancel and reschedule are disabled until DASHBOARD_AUTH_SECRET is set (Basic auth).",
+            "Cancel and reschedule are disabled until DASHBOARD_LINK_SECRET is set.",
           emergency: {
             button: "Emergency cancel day…",
             step1Title: "Emergency cancel all appointments for this day",
@@ -238,7 +239,7 @@ export default async function DashboardPage({
     }),
   ]);
 
-  const mutationsAllowed = Boolean(process.env.DASHBOARD_AUTH_SECRET?.trim());
+  const mutationsAllowed = isDashboardLinkAuthAvailable();
 
   const dateFnsLocale = lang === "el" ? el : enGB;
   const dateLabel = format(new Date(`${dateStr}T12:00:00`), "PPP", { locale: dateFnsLocale });

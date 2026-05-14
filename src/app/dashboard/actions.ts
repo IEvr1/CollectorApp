@@ -14,13 +14,13 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 function unauthorizedMessage(lang: Locale) {
   return lang === "el"
-    ? "Η ενέργεια απαιτεί Basic auth (DASHBOARD_AUTH_SECRET)."
-    : "This action requires Basic auth (DASHBOARD_AUTH_SECRET).";
+    ? "Η ενέργεια απαιτεί έγκυρο dashboard link."
+    : "This action requires a valid dashboard link.";
 }
 
 export async function getDashboardRescheduleSlots(bookingId: string, date: string, lang: Locale) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 
@@ -59,7 +59,7 @@ export async function getDashboardRescheduleSlots(bookingId: string, date: strin
 
 export async function rescheduleBookingFromDashboard(bookingId: string, startsAtIso: string, lang: Locale) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 
@@ -96,7 +96,7 @@ export async function rescheduleBookingFromDashboard(bookingId: string, startsAt
 
 export async function cancelBookingFromDashboard(bookingId: string, lang: Locale) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 
@@ -133,7 +133,7 @@ export async function addSalonClosureFromDashboard(
   lang: Locale,
 ) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 
@@ -173,7 +173,7 @@ export async function addSalonClosureFromDashboard(
 
 export async function deleteSalonClosureFromDashboard(closureId: string, lang: Locale) {
   const h = await headers();
-  if (!isDashboardMutationAuthorized(h)) {
+  if (!(await isDashboardMutationAuthorized(h))) {
     return { ok: false as const, error: unauthorizedMessage(lang) };
   }
 
