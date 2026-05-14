@@ -109,6 +109,7 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/emergency");
   return {
     ok: true as const,
     cancelled: cancelledIds.length,

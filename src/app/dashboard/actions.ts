@@ -168,6 +168,7 @@ export async function addSalonClosureFromDashboard(
   });
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/closures");
   return { ok: true as const };
 }
 
@@ -191,5 +192,6 @@ export async function deleteSalonClosureFromDashboard(closureId: string, lang: L
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/closures");
   return { ok: true as const };
 }

@@ -1,14 +1,10 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { format } from "date-fns";
-import { el, enGB } from "date-fns/locale";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { customerPhoneSearchWhere, parseBookingStatus } from "@/lib/dashboard-query";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import { salonLocalDayBoundsUtc, todayIsoInTimeZone } from "@/lib/timezone";
-import { DashboardClosuresPanel } from "@/app/dashboard/dashboard-closures-panel";
-import { DashboardEmergencyPanel } from "@/app/dashboard/dashboard-emergency-panel";
 import { DashboardFilters } from "@/app/dashboard/dashboard-filters";
 import { DashboardBookingsView } from "@/app/dashboard/dashboard-bookings-view";
 import { isDashboardLinkAuthAvailable } from "@/lib/dashboard-auth";
@@ -68,40 +64,6 @@ export default async function DashboardPage({
           },
           mutationsOff:
             "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_LINK_SECRET.",
-          emergency: {
-            button: "Έκτακτη ακύρωση ημέρας…",
-            step1Title: "Έκτακτη ακύρωση όλων των ραντεβού της ημέρας",
-            step1Continue: "Συνέχεια",
-            step1Back: "Άκυρο",
-            step2Title: "Οριστική επιβεβαίωση",
-            step2Checkbox:
-              "Καταλαβαίνω ότι όλα τα ενεργά ραντεβού (PENDING/CONFIRMED) της επιλεγμένης ημέρας για όλο το salon θα ακυρωθούν και θα σταλεί SMS στους πελάτες.",
-            step2Placeholder: "ΑΚΥΡΩΣΗ",
-            step2Hint: "Πληκτρολογήστε ΑΚΥΡΩΣΗ για επιβεβαίωση:",
-            step2Execute: "Εκτέλεση",
-            step2Back: "Πίσω",
-            working: "Περιμένετε…",
-            resultTitle: "Αποτέλεσμα",
-            resultCancelled: "Επιτυχείς ακυρώσεις",
-            resultAttempted: "Σύνολο που βρέθηκαν",
-            resultSmsSent: "SMS που στάλθηκαν",
-            resultSmsFailures: "Αποτυχίες SMS",
-            resultCalendarFailures: "Αποτυχίες ημερολογίου Google",
-            close: "Κλείσιμο",
-          },
-          closures: {
-            title: "Κλειστές ημέρες / αργίες",
-            subtitle:
-              "Ημερολογιακές ημέρες σε ζώνη salon όπου δεν εμφανίζονται διαθέσιμες ώρες και δεν γίνονται νέες κρατήσεις.",
-            from: "Από",
-            to: "Έως (συμπεριλαμβανομένης)",
-            note: "Σημείωση (προαιρετικά)",
-            add: "Προσθήκη",
-            delete: "Διαγραφή",
-            empty: "Δεν έχουν οριστεί κλειστές περίοδοι.",
-            working: "Περιμένετε…",
-            listHeading: "Καταχωρημένες περίοδοι",
-          },
         }
       : {
           title: "Manager Dashboard",
@@ -138,40 +100,6 @@ export default async function DashboardPage({
           },
           mutationsOff:
             "Cancel and reschedule are disabled until DASHBOARD_LINK_SECRET is set.",
-          emergency: {
-            button: "Emergency cancel day…",
-            step1Title: "Emergency cancel all appointments for this day",
-            step1Continue: "Continue",
-            step1Back: "Cancel",
-            step2Title: "Final confirmation",
-            step2Checkbox:
-              "I understand that every active booking (PENDING/CONFIRMED) on the selected salon-local day for the whole salon will be cancelled and customers will receive an SMS.",
-            step2Placeholder: "CANCEL",
-            step2Hint: "Type CANCEL to confirm:",
-            step2Execute: "Execute",
-            step2Back: "Back",
-            working: "Please wait…",
-            resultTitle: "Result",
-            resultCancelled: "Successful cancellations",
-            resultAttempted: "Bookings found",
-            resultSmsSent: "SMS sent",
-            resultSmsFailures: "SMS failures",
-            resultCalendarFailures: "Google Calendar failures",
-            close: "Close",
-          },
-          closures: {
-            title: "Closed days / holidays",
-            subtitle:
-              "Salon-local calendar dates with no available slots and no new bookings (inclusive end date).",
-            from: "From",
-            to: "To (inclusive)",
-            note: "Note (optional)",
-            add: "Add",
-            delete: "Delete",
-            empty: "No closure periods defined.",
-            working: "Please wait…",
-            listHeading: "Saved periods",
-          },
         };
 
   await ensureSalonSeed();
@@ -208,7 +136,7 @@ export default async function DashboardPage({
     ...(phoneWhere ? { customer: phoneWhere } : {}),
   };
 
-  const [staffOptions, serviceOptions, bookings, emergencyDayCount, closures] = await Promise.all([
+  const [staffOptions, serviceOptions, bookings] = await Promise.all([
     prisma.staff.findMany({
       where: { salonId: salon.id, active: true },
       orderBy: { name: "asc" },
@@ -225,51 +153,60 @@ export default async function DashboardPage({
       take: 500,
       include: { customer: true, service: true, staff: true },
     }),
-    prisma.booking.count({
-      where: {
-        salonId: salon.id,
-        startsAt: { gte: start, lt: endExclusive },
-        status: { in: ["PENDING", "CONFIRMED"] },
-      },
-    }),
-    prisma.salonClosure.findMany({
-      where: { salonId: salon.id },
-      orderBy: { startDate: "asc" },
-      select: { id: true, startDate: true, endDate: true, label: true },
-    }),
   ]);
 
   const mutationsAllowed = isDashboardLinkAuthAvailable();
 
-  const dateFnsLocale = lang === "el" ? el : enGB;
-  const dateLabel = format(new Date(`${dateStr}T12:00:00`), "PPP", { locale: dateFnsLocale });
-  const dayExplanation =
-    lang === "el"
-      ? `Για την ${dateLabel} υπάρχουν ${emergencyDayCount} ενεργά ραντεβού (PENDING/CONFIRMED) σε όλο το salon, ανεξάρτητα από τα φίλτρα του πίνακα. Θα ακυρωθούν όλα και θα σταλεί SMS σε κάθε πελάτη με σύνδεσμο επαναπρογραμματισμού.`
-      : `On ${dateLabel} there are ${emergencyDayCount} active bookings (PENDING/CONFIRMED) for the entire salon, independent of table filters. All will be cancelled and each customer receives an SMS with a reschedule link.`;
-
   const kpisHref = `/dashboard/kpis${lang === "en" ? "?lang=en" : ""}`;
-  const kpisLabel = lang === "el" ? "KPIs" : "KPIs";
+  const closuresHref = `/dashboard/closures${lang === "en" ? "?lang=en" : ""}`;
+  const emergencyHref = `/dashboard/emergency?date=${dateStr}${lang === "en" ? "&lang=en" : ""}`;
+  const navCards = [
+    {
+      href: kpisHref,
+      title: "KPIs",
+      description: lang === "el" ? "Στατιστικά και δείκτες απόδοσης." : "Performance stats and indicators.",
+    },
+    {
+      href: closuresHref,
+      title: lang === "el" ? "Κλειστές ημέρες / αργίες" : "Closed days / holidays",
+      description: lang === "el" ? "Διαχείριση ημερών χωρίς διαθέσιμες ώρες." : "Manage days with no available slots.",
+    },
+    {
+      href: emergencyHref,
+      title: lang === "el" ? "Έκτακτη ακύρωση ημέρας" : "Emergency cancel day",
+      description:
+        lang === "el"
+          ? "Μαζική ακύρωση ενεργών ραντεβού για επιλεγμένη ημέρα."
+          : "Bulk-cancel active bookings for a selected day.",
+    },
+  ];
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t.title}</h1>
           <p className="text-sm text-zinc-600">{t.subtitle}</p>
         </div>
-        <Link
-          href={kpisHref}
-          className="rounded-xl bg-violet-600 px-3 py-1.5 text-sm font-medium text-white shadow transition hover:bg-violet-700"
-        >
-          {kpisLabel}
-        </Link>
       </div>
       {!mutationsAllowed ? (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {t.mutationsOff}
         </p>
       ) : null}
+
+      <div className="mb-6 grid gap-3 md:grid-cols-3">
+        {navCards.map((card) => (
+          <Link
+            key={card.href}
+            href={card.href}
+            className="rounded-2xl border border-violet-100 bg-white/95 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md"
+          >
+            <span className="text-sm font-semibold text-violet-800">{card.title}</span>
+            <span className="mt-1 block text-xs leading-5 text-zinc-600">{card.description}</span>
+          </Link>
+        ))}
+      </div>
 
       <DashboardFilters
         lang={lang}
@@ -284,16 +221,6 @@ export default async function DashboardPage({
           view,
         }}
         labels={t.filters}
-      />
-
-      <DashboardClosuresPanel lang={lang} closures={closures} mutationsAllowed={mutationsAllowed} labels={t.closures} />
-
-      <DashboardEmergencyPanel
-        lang={lang}
-        filterDate={dateStr}
-        activeDayCount={emergencyDayCount}
-        mutationsAllowed={mutationsAllowed}
-        labels={{ ...t.emergency, dayExplanation }}
       />
 
       <DashboardBookingsView
