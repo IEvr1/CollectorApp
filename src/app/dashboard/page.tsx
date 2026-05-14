@@ -34,7 +34,7 @@ export default async function DashboardPage({
   const t =
     lang === "el"
       ? {
-          title: "Dashboard Διαχείρισης",
+          title: "Dashboard",
           date: "Ημερομηνία",
           time: "Ώρα",
           customer: "Πελάτης",
@@ -77,7 +77,7 @@ export default async function DashboardPage({
           },
         }
       : {
-          title: "Manager Dashboard",
+          title: "Dashboard",
           date: "Date",
           time: "Time",
           customer: "Customer",
@@ -130,6 +130,7 @@ export default async function DashboardPage({
       </div>
     );
   }
+  const dashboardTitle = `${t.title} ${salon.name}`;
 
   const todayStr = todayIsoInTimeZone(salon.timezone);
   const dateParam = params.date?.trim();
@@ -217,7 +218,7 @@ export default async function DashboardPage({
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{t.title}</h1>
+          <h1 className="text-2xl font-semibold">{dashboardTitle}</h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {navButtons.map((button) => (
