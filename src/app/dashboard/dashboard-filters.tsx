@@ -5,7 +5,7 @@ import type { Locale } from "@/lib/locale";
 
 type Option = { id: string; name: string };
 
-const STATUSES = ["PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"] as const;
+const STATUSES = ["CONFIRMED", "CANCELLED"] as const;
 
 type Props = {
   lang: Locale;

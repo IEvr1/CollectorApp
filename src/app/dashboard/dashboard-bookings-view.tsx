@@ -2,13 +2,17 @@ import { format } from "date-fns";
 import { el, enGB } from "date-fns/locale";
 import type { Prisma } from "@prisma/client";
 import type { Locale } from "@/lib/locale";
-import { DashboardBookingActions } from "@/app/dashboard/dashboard-booking-actions";
+import {
+  DashboardBookingActions,
+  DashboardCalendarOnlyActions,
+} from "@/app/dashboard/dashboard-booking-actions";
 
 export type DashboardBookingRow = Prisma.BookingGetPayload<{
   include: { customer: true; service: true; staff: true };
 }> | {
   kind: "calendar";
   id: string;
+  calendarId: string;
   googleEventId: string;
   startsAt: Date;
   endsAt: Date;
@@ -40,7 +44,8 @@ type ActionLabels = {
   close: string;
   working: string;
   errorPrefix: string;
-  calendarOnly: string;
+  requestSent: string;
+  calendarOnlyMissingPhone: string;
 };
 
 type Props = {
@@ -53,16 +58,20 @@ type Props = {
 };
 
 function statusClass(status: string) {
-  if (status === "CONFIRMED") {
+  if (status === "CONFIRMED" || status === "CALENDAR") {
     return "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700";
   }
   if (status === "CANCELLED") {
     return "inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700";
   }
-  if (status === "CALENDAR") {
-    return "inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700";
+  return "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700";
+}
+
+function statusLabel(status: string, lang: Locale) {
+  if (status === "CANCELLED") {
+    return lang === "el" ? "Ακυρωμένο" : "Cancelled";
   }
-  return "inline-flex rounded-full border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700";
+  return lang === "el" ? "Επιβεβαιωμένο" : "Confirmed";
 }
 
 function isCalendarOnlyRow(booking: DashboardBookingRow): booking is Extract<DashboardBookingRow, { kind: "calendar" }> {
@@ -81,19 +90,32 @@ function BookingActionsCell({
   actionLabels: ActionLabels;
 }) {
   if (isCalendarOnlyRow(booking)) {
-    return <span className="text-xs font-medium text-sky-700">{actionLabels.calendarOnly}</span>;
+    return (
+      <DashboardCalendarOnlyActions
+        lang={lang}
+        details={{
+          calendarId: booking.calendarId,
+          googleEventId: booking.googleEventId,
+          staffId: booking.staffId,
+          serviceName: booking.service.name,
+          customerName: booking.customer.name,
+          phoneE164: booking.customer.phoneE164,
+          startsAtIso: booking.startsAt.toISOString(),
+          endsAtIso: booking.endsAt.toISOString(),
+        }}
+        labels={actionLabels}
+      />
+    );
   }
 
   const now = new Date();
-  const canCancel =
-    (booking.status === "PENDING" || booking.status === "CONFIRMED") && booking.endsAt > now;
   const canReschedule = booking.status === "CONFIRMED" && booking.endsAt > now;
 
   return (
     <DashboardBookingActions
       bookingId={booking.id}
       lang={lang}
-      canCancel={canCancel}
+      canCancel={false}
       canReschedule={canReschedule}
       defaultDate={filterDate}
       labels={actionLabels}
@@ -123,7 +145,7 @@ function RowCells({
       <td className="px-3 py-2">{booking.service.name}</td>
       <td className="px-3 py-2">{booking.staff.name}</td>
       <td className="px-3 py-2">
-        <span className={statusClass(booking.status)}>{booking.status}</span>
+        <span className={statusClass(booking.status)}>{statusLabel(booking.status, lang)}</span>
       </td>
       <td className="px-3 py-2 align-top">
         <BookingActionsCell
@@ -237,7 +259,7 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
                     <td className="px-3 py-2">{booking.customer.phoneE164}</td>
                     <td className="px-3 py-2">{booking.service.name}</td>
                     <td className="px-3 py-2">
-                      <span className={statusClass(booking.status)}>{booking.status}</span>
+                      <span className={statusClass(booking.status)}>{statusLabel(booking.status, lang)}</span>
                     </td>
                     <td className="px-3 py-2 align-top">
                       <BookingActionsCell

@@ -65,7 +65,8 @@ export default async function DashboardPage({
             close: "Κλείσιμο",
             working: "Περιμένετε…",
             errorPrefix: "",
-            calendarOnly: "Μόνο Calendar",
+            requestSent: "Στάλθηκε SMS",
+            calendarOnlyMissingPhone: "Χωρίς τηλέφωνο",
           },
           mutationsOff:
             "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_LINK_SECRET.",
@@ -106,7 +107,8 @@ export default async function DashboardPage({
             close: "Close",
             working: "Please wait…",
             errorPrefix: "",
-            calendarOnly: "Calendar only",
+            requestSent: "SMS sent",
+            calendarOnlyMissingPhone: "No phone",
           },
           mutationsOff:
             "Cancel and reschedule are disabled until DASHBOARD_LINK_SECRET is set.",
@@ -397,6 +399,7 @@ async function loadCalendarOnlyRows({
           return {
             kind: "calendar",
             id: `calendar:${event.calendarId}:${event.id}`,
+            calendarId: event.calendarId,
             googleEventId: event.id,
             startsAt: event.start,
             endsAt: event.end,
