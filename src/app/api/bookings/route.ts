@@ -222,7 +222,7 @@ export async function POST(request: Request) {
         phoneE164,
         bookingId: booking.id,
       });
-      const base = getSmsLinkBaseUrl();
+      const base = getSmsLinkBaseUrl(request);
       const manageUrl = `${base}/l/${shortCode}`;
       const when = format(startsAt, "yyyy-MM-dd HH:mm");
       const message = `${salon.name}: Booked ${when}. Link: ${manageUrl}`;

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { resolveManagePayloadByShortCode } from "@/lib/deep-link-token";
 import { MANAGE_SESSION_COOKIE, signManageSessionCookieValue } from "@/lib/manage-session";
+import { getAppBaseUrl } from "@/lib/sms-link-base";
 
 type RouteParams = {
   params: Promise<{ code: string }>;
 };
 
-export async function GET(_request: Request, { params }: RouteParams) {
-  const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
+export async function GET(request: Request, { params }: RouteParams) {
+  const base = getAppBaseUrl(request);
   try {
     const { code } = await params;
     const payload = await resolveManagePayloadByShortCode(code);

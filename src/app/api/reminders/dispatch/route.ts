@@ -42,7 +42,7 @@ function isAuthorized(request: Request) {
   return false;
 }
 
-async function runDispatch() {
+async function runDispatch(request: Request) {
   const now = new Date();
   const dispatchThrough = new Date(now.getTime() + DISPATCH_LOOKAHEAD_MS);
   const reminders = await prisma.bookingReminder.findMany({
@@ -82,7 +82,7 @@ async function runDispatch() {
       bookingId: booking.id,
     });
 
-    const base = getSmsLinkBaseUrl();
+    const base = getSmsLinkBaseUrl(request);
     const manageUrl = `${base}/l/${shortCode}`;
     const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
     const message = `${booking.salon.name}: Reminder ${when}. Link: ${manageUrl}`;
@@ -102,12 +102,12 @@ export async function GET(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return runDispatch();
+  return runDispatch(request);
 }
 
 export async function POST(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return runDispatch();
+  return runDispatch(request);
 }
