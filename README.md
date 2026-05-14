@@ -52,6 +52,7 @@ Open [http://localhost:3002](http://localhost:3002).
 - `/chat` customer booking chat
 - `/dashboard?code=...` manager booking table via signed business link. Generate a 90-day link with `npm run dashboard:link`.
 - `/r/:token` returning customer deep-link resolver
+- The dashboard includes PWA install metadata and an in-page install button when Chrome exposes the install prompt.
 
 ## Notes
 

@@ -11,6 +11,7 @@ import {
   DashboardBookingsView,
   type DashboardBookingRow,
 } from "@/app/dashboard/dashboard-bookings-view";
+import { DashboardPwaInstall } from "@/app/dashboard/dashboard-pwa-install";
 import { isDashboardLinkAuthAvailable } from "@/lib/dashboard-auth";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -74,6 +75,7 @@ export default async function DashboardPage({
             newBooking: "Καταχώρηση Ραντεβού",
             holidays: "Αργίες",
             emergency: "Ακύρωση",
+            install: "Εγκατάσταση",
           },
         }
       : {
@@ -117,6 +119,7 @@ export default async function DashboardPage({
             newBooking: "Add Booking",
             holidays: "Holidays",
             emergency: "Cancel",
+            install: "Install app",
           },
         };
 
@@ -221,6 +224,7 @@ export default async function DashboardPage({
           <h1 className="text-2xl font-semibold">{dashboardTitle}</h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <DashboardPwaInstall label={t.nav.install} />
           {navButtons.map((button) => (
             <Link
               key={button.href}
