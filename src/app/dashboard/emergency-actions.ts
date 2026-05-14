@@ -97,7 +97,7 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
       );
       const manageUrl = `${base}/l/${shortCode}`;
       const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
-      const body = `${salon.name}: Cancelled ${when}. Link: ${manageUrl}`;
+      const body = `${salon.name}: Cancelled ${when}. Manage Booking: ${manageUrl}`;
 
       await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });
       smsSent += 1;

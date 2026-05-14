@@ -85,7 +85,7 @@ async function runDispatch(request: Request) {
     const base = getSmsLinkBaseUrl(request);
     const manageUrl = `${base}/l/${shortCode}`;
     const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
-    const message = `${booking.salon.name}: Reminder ${when}. Link: ${manageUrl}`;
+    const message = `${booking.salon.name}: Reminder ${when}. Manage Booking: ${manageUrl}`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });
     await prisma.bookingReminder.updateMany({

@@ -225,7 +225,7 @@ export async function POST(request: Request) {
       const base = getSmsLinkBaseUrl(request);
       const manageUrl = `${base}/l/${shortCode}`;
       const when = format(startsAt, "yyyy-MM-dd HH:mm");
-      const message = `${salon.name}: Booked ${when}. Link: ${manageUrl}`;
+      const message = `${salon.name}: Booked ${when}. Manage Booking: ${manageUrl}`;
 
       try {
         await sendBookingSms({ phoneE164, body: message });
