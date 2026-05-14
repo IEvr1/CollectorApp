@@ -189,13 +189,20 @@ export default function ChatPage() {
   const bookingRequestInFlightRef = useRef(false);
   const manageRequestInFlightRef = useRef(false);
 
-  const scrollChatToBottom = useCallback(() => {
+  const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = chatScrollRef.current;
     if (!el) {
       return;
     }
-    el.scrollTop = el.scrollHeight;
+    el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
+
+  const scrollChatToBottomAfterPaint = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      window.requestAnimationFrame(() => scrollChatToBottom(behavior));
+    },
+    [scrollChatToBottom],
+  );
 
   const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
   const [identity, setIdentity] = useState<"pending" | "returning" | "new">("returning");
@@ -281,11 +288,11 @@ export default function ChatPage() {
       return;
     }
     const ro = new ResizeObserver(() => {
-      root.scrollTop = root.scrollHeight;
+      scrollChatToBottom();
     });
     ro.observe(content);
     return () => ro.disconnect();
-  }, []);
+  }, [scrollChatToBottom]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -357,11 +364,13 @@ export default function ChatPage() {
     setServiceId(id);
     setStaffId("");
     setSlot("");
+    scrollChatToBottomAfterPaint();
   }
 
   function selectStaff(id: string) {
     setStaffId(id);
     setSlot("");
+    scrollChatToBottomAfterPaint();
   }
 
   const selectedService = useMemo(
@@ -746,7 +755,7 @@ export default function ChatPage() {
 
       <div
         ref={chatScrollRef}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-4 shadow-inner"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-sm"
       >
         <div ref={chatContentRef} className="flex flex-col gap-3">
         {manage === undefined && (
@@ -926,7 +935,10 @@ export default function ChatPage() {
                         <button
                           key={slotIso}
                           type="button"
-                          onClick={() => setManageSlot(slotIso)}
+                          onClick={() => {
+                            setManageSlot(slotIso);
+                            scrollChatToBottomAfterPaint();
+                          }}
                           className={choiceClass(manageSlot === slotIso)}
                         >
                           {new Date(slotIso).toLocaleTimeString(intlLocale, {
@@ -948,7 +960,10 @@ export default function ChatPage() {
                         <button
                           key={slotIso}
                           type="button"
-                          onClick={() => setManageSlot(slotIso)}
+                          onClick={() => {
+                            setManageSlot(slotIso);
+                            scrollChatToBottomAfterPaint();
+                          }}
                           className={choiceClass(manageSlot === slotIso)}
                         >
                           {new Date(slotIso).toLocaleTimeString(intlLocale, {
@@ -1058,9 +1073,10 @@ export default function ChatPage() {
               </CardGrid>
             )}
 
+            {hasService && selectedService && <Bubble role="user" text={selectedService.name} />}
+
             {hasService && selectedService && !hasStaff && (
               <>
-                <Bubble role="user" text={selectedService.name} />
                 <Bubble role="assistant" text={t.pickStaff} />
                 <CardGrid>
                   {staff.map((member) => (
@@ -1077,13 +1093,9 @@ export default function ChatPage() {
               </>
             )}
 
-            {hasService && selectedService && rebookActive && hasStaff && selectedStaff && (
-              <Bubble role="user" text={`${selectedService.name} · ${selectedStaff.name}`} />
-            )}
-
             {hasStaff && selectedStaff && (
               <>
-                {!rebookActive && <Bubble role="user" text={selectedStaff.name} />}
+                <Bubble role="user" text={selectedStaff.name} />
                 <Bubble role="assistant" text={t.pickDate} />
                 <div className="max-w-[85%]">
                   <input
@@ -1114,7 +1126,10 @@ export default function ChatPage() {
                             <button
                               key={slotIso}
                               type="button"
-                              onClick={() => setSlot(slotIso)}
+                              onClick={() => {
+                                setSlot(slotIso);
+                                scrollChatToBottomAfterPaint();
+                              }}
                               className={choiceClass(slot === slotIso)}
                             >
                               {new Date(slotIso).toLocaleTimeString(intlLocale, {
@@ -1136,7 +1151,10 @@ export default function ChatPage() {
                             <button
                               key={slotIso}
                               type="button"
-                              onClick={() => setSlot(slotIso)}
+                              onClick={() => {
+                                setSlot(slotIso);
+                                scrollChatToBottomAfterPaint();
+                              }}
                               className={choiceClass(slot === slotIso)}
                             >
                               {new Date(slotIso).toLocaleTimeString(intlLocale, {
