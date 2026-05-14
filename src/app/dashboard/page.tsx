@@ -2,11 +2,15 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { customerPhoneSearchWhere, parseBookingStatus } from "@/lib/dashboard-query";
-import { parseLocale } from "@/lib/locale";
+import { listGoogleCalendarEvents, resolveGoogleCalendarId } from "@/lib/google-calendar";
+import { parseLocale, type Locale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import { salonLocalDayBoundsUtc, todayIsoInTimeZone } from "@/lib/timezone";
 import { DashboardFilters } from "@/app/dashboard/dashboard-filters";
-import { DashboardBookingsView } from "@/app/dashboard/dashboard-bookings-view";
+import {
+  DashboardBookingsView,
+  type DashboardBookingRow,
+} from "@/app/dashboard/dashboard-bookings-view";
 import { isDashboardLinkAuthAvailable } from "@/lib/dashboard-auth";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -31,8 +35,8 @@ export default async function DashboardPage({
     lang === "el"
       ? {
           title: "Dashboard Διαχείρισης",
-          subtitle: "Φίλτρα ανά ημέρα (ζώνη salon), staff, υπηρεσία, κατάσταση και τηλέφωνο.",
-          dt: "Ημερομηνία & Ώρα",
+          date: "Ημερομηνία",
+          time: "Ώρα",
           customer: "Πελάτης",
           phone: "Τηλέφωνο",
           service: "Υπηρεσία",
@@ -61,14 +65,19 @@ export default async function DashboardPage({
             close: "Κλείσιμο",
             working: "Περιμένετε…",
             errorPrefix: "",
+            calendarOnly: "Μόνο Calendar",
           },
           mutationsOff:
             "Οι ενέργειες ακύρωσης/αλλαγής ώρας είναι απενεργοποιημένες μέχρι να οριστεί DASHBOARD_LINK_SECRET.",
+          nav: {
+            holidays: "Αργίες",
+            emergency: "Ακύρωση",
+          },
         }
       : {
           title: "Manager Dashboard",
-          subtitle: "Filters by salon-local day, staff, service, status, and phone.",
-          dt: "Date & Time",
+          date: "Date",
+          time: "Time",
           customer: "Customer",
           phone: "Phone",
           service: "Service",
@@ -97,9 +106,14 @@ export default async function DashboardPage({
             close: "Close",
             working: "Please wait…",
             errorPrefix: "",
+            calendarOnly: "Calendar only",
           },
           mutationsOff:
             "Cancel and reschedule are disabled until DASHBOARD_LINK_SECRET is set.",
+          nav: {
+            holidays: "Holidays",
+            emergency: "Cancel",
+          },
         };
 
   await ensureSalonSeed();
@@ -140,7 +154,7 @@ export default async function DashboardPage({
     prisma.staff.findMany({
       where: { salonId: salon.id, active: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, calendarId: true },
     }),
     prisma.service.findMany({
       where: { salonId: salon.id, active: true },
@@ -154,39 +168,83 @@ export default async function DashboardPage({
       include: { customer: true, service: true, staff: true },
     }),
   ]);
+  const persistedGoogleEventIds = new Set(
+    bookings.map((booking) => booking.googleEventId).filter((id): id is string => Boolean(id)),
+  );
+  const calendarRows = await loadCalendarOnlyRows({
+    staff: staffOptions,
+    start,
+    endExclusive,
+    selectedStaffId: staffId,
+    selectedServiceId: serviceId,
+    selectedServiceName: serviceOptions.find((service) => service.id === serviceId)?.name ?? "",
+    statusFiltered: Boolean(statusParsed),
+    phoneQuery: phoneQ,
+    persistedGoogleEventIds,
+  });
+  const dashboardRows: DashboardBookingRow[] = [...bookings, ...calendarRows].sort(
+    (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
+  );
 
   const mutationsAllowed = isDashboardLinkAuthAvailable();
 
   const kpisHref = `/dashboard/kpis${lang === "en" ? "?lang=en" : ""}`;
   const closuresHref = `/dashboard/closures${lang === "en" ? "?lang=en" : ""}`;
   const emergencyHref = `/dashboard/emergency?date=${dateStr}${lang === "en" ? "&lang=en" : ""}`;
-  const navCards = [
-    {
-      href: kpisHref,
-      title: "KPIs",
-      description: lang === "el" ? "Στατιστικά και δείκτες απόδοσης." : "Performance stats and indicators.",
-    },
-    {
-      href: closuresHref,
-      title: lang === "el" ? "Κλειστές ημέρες / αργίες" : "Closed days / holidays",
-      description: lang === "el" ? "Διαχείριση ημερών χωρίς διαθέσιμες ώρες." : "Manage days with no available slots.",
-    },
-    {
-      href: emergencyHref,
-      title: lang === "el" ? "Έκτακτη ακύρωση ημέρας" : "Emergency cancel day",
-      description:
-        lang === "el"
-          ? "Μαζική ακύρωση ενεργών ραντεβού για επιλεγμένη ημέρα."
-          : "Bulk-cancel active bookings for a selected day.",
-    },
+  const navButtons = [
+    { href: kpisHref, label: "KPIs" },
+    { href: closuresHref, label: t.nav.holidays },
+    { href: emergencyHref, label: t.nav.emergency },
   ];
+  const commonDashboardQuery = {
+    date: dateStr,
+    staffId,
+    serviceId,
+    status: statusParsed ?? "",
+    phone: phoneQ,
+    view,
+  };
+  const greekHref = dashboardHref({ ...commonDashboardQuery, lang: "el" });
+  const englishHref = dashboardHref({ ...commonDashboardQuery, lang: "en" });
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t.title}</h1>
-          <p className="text-sm text-zinc-600">{t.subtitle}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {navButtons.map((button) => (
+            <Link
+              key={button.href}
+              href={button.href}
+              className="rounded-xl bg-violet-600 px-3 py-1.5 text-sm font-medium text-white shadow transition hover:bg-violet-700"
+            >
+              {button.label}
+            </Link>
+          ))}
+          <div className="flex rounded-xl border border-zinc-200 bg-white/90 p-1 text-xs font-medium shadow-sm">
+            <Link
+              href={greekHref}
+              className={
+                lang === "el"
+                  ? "rounded-lg bg-violet-600 px-2.5 py-1 text-white shadow"
+                  : "rounded-lg px-2.5 py-1 text-zinc-700 hover:text-violet-700"
+              }
+            >
+              EL
+            </Link>
+            <Link
+              href={englishHref}
+              className={
+                lang === "en"
+                  ? "rounded-lg bg-violet-600 px-2.5 py-1 text-white shadow"
+                  : "rounded-lg px-2.5 py-1 text-zinc-700 hover:text-violet-700"
+              }
+            >
+              EN
+            </Link>
+          </div>
         </div>
       </div>
       {!mutationsAllowed ? (
@@ -194,20 +252,6 @@ export default async function DashboardPage({
           {t.mutationsOff}
         </p>
       ) : null}
-
-      <div className="mb-6 grid gap-3 md:grid-cols-3">
-        {navCards.map((card) => (
-          <Link
-            key={card.href}
-            href={card.href}
-            className="rounded-2xl border border-violet-100 bg-white/95 p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md"
-          >
-            <span className="text-sm font-semibold text-violet-800">{card.title}</span>
-            <span className="mt-1 block text-xs leading-5 text-zinc-600">{card.description}</span>
-          </Link>
-        ))}
-      </div>
-
       <DashboardFilters
         lang={lang}
         staff={staffOptions}
@@ -224,12 +268,13 @@ export default async function DashboardPage({
       />
 
       <DashboardBookingsView
-        bookings={bookings}
+        bookings={dashboardRows}
         view={view}
         lang={lang}
         filterDate={dateStr}
         tableLabels={{
-          dt: t.dt,
+          date: t.date,
+          time: t.time,
           customer: t.customer,
           phone: t.phone,
           service: t.service,
@@ -242,4 +287,150 @@ export default async function DashboardPage({
       />
     </div>
   );
+}
+
+type DashboardStaffOption = {
+  id: string;
+  name: string;
+  calendarId: string | null;
+};
+
+type DashboardHrefParams = {
+  lang: Locale;
+  date: string;
+  staffId: string;
+  serviceId: string;
+  status: string;
+  phone: string;
+  view: "list" | "grouped";
+};
+
+function dashboardHref({ lang, date, staffId, serviceId, status, phone, view }: DashboardHrefParams) {
+  const query = new URLSearchParams();
+  if (lang === "en") {
+    query.set("lang", "en");
+  }
+  if (date) {
+    query.set("date", date);
+  }
+  if (staffId) {
+    query.set("staffId", staffId);
+  }
+  if (serviceId) {
+    query.set("serviceId", serviceId);
+  }
+  if (status) {
+    query.set("status", status);
+  }
+  if (phone) {
+    query.set("phone", phone);
+  }
+  if (view === "list") {
+    query.set("view", view);
+  }
+
+  const qs = query.toString();
+  return `/dashboard${qs ? `?${qs}` : ""}`;
+}
+
+type CalendarRowParams = {
+  staff: DashboardStaffOption[];
+  start: Date;
+  endExclusive: Date;
+  selectedStaffId: string;
+  selectedServiceId: string;
+  selectedServiceName: string;
+  statusFiltered: boolean;
+  phoneQuery: string;
+  persistedGoogleEventIds: Set<string>;
+};
+
+async function loadCalendarOnlyRows({
+  staff,
+  start,
+  endExclusive,
+  selectedStaffId,
+  selectedServiceId,
+  selectedServiceName,
+  statusFiltered,
+  phoneQuery,
+  persistedGoogleEventIds,
+}: CalendarRowParams): Promise<DashboardBookingRow[]> {
+  if (statusFiltered) {
+    return [];
+  }
+
+  const calendars = new Map<string, DashboardStaffOption>();
+  for (const member of staff) {
+    if (selectedStaffId && member.id !== selectedStaffId) {
+      continue;
+    }
+    const calendarId = resolveGoogleCalendarId(member.calendarId);
+    if (!calendarId || calendars.has(calendarId)) {
+      continue;
+    }
+    calendars.set(calendarId, member);
+  }
+
+  const rows = await Promise.all(
+    [...calendars.entries()].map(async ([calendarId, member]) => {
+      const result = await listGoogleCalendarEvents({
+        calendarId,
+        timeMin: start,
+        timeMax: endExclusive,
+      });
+      if (!result.ok) {
+        return [];
+      }
+
+      return result.events
+        .filter((event) => !persistedGoogleEventIds.has(event.id))
+        .map((event): DashboardBookingRow | null => {
+          const parsed = parseCalendarEvent(event.summary, event.description);
+          if (selectedServiceId && !sameText(parsed.serviceName, selectedServiceName)) {
+            return null;
+          }
+          if (phoneQuery && !parsed.phone.toLowerCase().includes(phoneQuery.toLowerCase())) {
+            return null;
+          }
+
+          return {
+            kind: "calendar",
+            id: `calendar:${event.calendarId}:${event.id}`,
+            googleEventId: event.id,
+            startsAt: event.start,
+            endsAt: event.end,
+            status: "CALENDAR",
+            staffId: member.id,
+            customer: {
+              name: parsed.customerName,
+              phoneE164: parsed.phone || "—",
+            },
+            service: { name: parsed.serviceName },
+            staff: { name: member.name },
+          };
+        })
+        .filter((row): row is DashboardBookingRow => row !== null);
+    }),
+  );
+
+  return rows.flat();
+}
+
+function parseCalendarEvent(summary: string, description: string | null) {
+  const separator = summary.indexOf(" - ");
+  const serviceName = separator > 0 ? summary.slice(0, separator).trim() : summary.trim();
+  const customerName =
+    separator > 0 ? summary.slice(separator + 3).trim() || "Google Calendar" : "Google Calendar";
+  const phoneMatch = description?.match(/Phone:\s*([^\s<]+)/i);
+
+  return {
+    serviceName: serviceName || "Google Calendar",
+    customerName,
+    phone: phoneMatch?.[1] ?? "",
+  };
+}
+
+function sameText(a: string, b: string) {
+  return a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
 }

@@ -713,30 +713,31 @@ export default function ChatPage() {
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col px-4 py-6">
       <header className="mb-4 shrink-0">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-zinc-500">{t.langLabel}:</span>
-          <button
-            type="button"
-            onClick={() => setLocale("el")}
-            className={`rounded-md px-2 py-1 transition ${
-              locale === "el"
-                ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700"
-                : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"
-            }`}
-          >
-            {t.greek}
-          </button>
-          <button
-            type="button"
-            onClick={() => setLocale("en")}
-            className={`rounded-md px-2 py-1 transition ${
-              locale === "en"
-                ? "border border-violet-200 bg-[var(--primary-soft)] font-medium text-violet-700"
-                : "border border-zinc-300 text-zinc-700 hover:border-violet-300 hover:text-violet-700"
-            }`}
-          >
-            {t.english}
-          </button>
+        <div className="flex justify-end">
+          <div className="flex rounded-xl border border-zinc-200 bg-white/90 p-1 text-xs font-medium shadow-sm">
+            <button
+              type="button"
+              onClick={() => setLocale("el")}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                locale === "el"
+                  ? "bg-violet-600 text-white shadow"
+                  : "text-zinc-700 hover:text-violet-700"
+              }`}
+            >
+              EL
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocale("en")}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                locale === "en"
+                  ? "bg-violet-600 text-white shadow"
+                  : "text-zinc-700 hover:text-violet-700"
+              }`}
+            >
+              EN
+            </button>
+          </div>
         </div>
         <h1 className="mt-3 text-xl font-semibold tracking-tight text-zinc-900">
           {salonName || manage?.salonName || "\u00a0"}

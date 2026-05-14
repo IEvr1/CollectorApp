@@ -6,10 +6,22 @@ import { DashboardBookingActions } from "@/app/dashboard/dashboard-booking-actio
 
 export type DashboardBookingRow = Prisma.BookingGetPayload<{
   include: { customer: true; service: true; staff: true };
-}>;
+}> | {
+  kind: "calendar";
+  id: string;
+  googleEventId: string;
+  startsAt: Date;
+  endsAt: Date;
+  status: "CALENDAR";
+  staffId: string;
+  customer: { name: string; phoneE164: string };
+  service: { name: string };
+  staff: { name: string };
+};
 
 type TableLabels = {
-  dt: string;
+  date: string;
+  time: string;
   customer: string;
   phone: string;
   service: string;
@@ -28,6 +40,7 @@ type ActionLabels = {
   close: string;
   working: string;
   errorPrefix: string;
+  calendarOnly: string;
 };
 
 type Props = {
@@ -46,7 +59,46 @@ function statusClass(status: string) {
   if (status === "CANCELLED") {
     return "inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700";
   }
+  if (status === "CALENDAR") {
+    return "inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700";
+  }
   return "inline-flex rounded-full border border-zinc-200 bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700";
+}
+
+function isCalendarOnlyRow(booking: DashboardBookingRow): booking is Extract<DashboardBookingRow, { kind: "calendar" }> {
+  return "kind" in booking && booking.kind === "calendar";
+}
+
+function BookingActionsCell({
+  booking,
+  filterDate,
+  lang,
+  actionLabels,
+}: {
+  booking: DashboardBookingRow;
+  filterDate: string;
+  lang: Locale;
+  actionLabels: ActionLabels;
+}) {
+  if (isCalendarOnlyRow(booking)) {
+    return <span className="text-xs font-medium text-sky-700">{actionLabels.calendarOnly}</span>;
+  }
+
+  const now = new Date();
+  const canCancel =
+    (booking.status === "PENDING" || booking.status === "CONFIRMED") && booking.endsAt > now;
+  const canReschedule = booking.status === "CONFIRMED" && booking.endsAt > now;
+
+  return (
+    <DashboardBookingActions
+      bookingId={booking.id}
+      lang={lang}
+      canCancel={canCancel}
+      canReschedule={canReschedule}
+      defaultDate={filterDate}
+      labels={actionLabels}
+    />
+  );
 }
 
 function RowCells({
@@ -62,14 +114,10 @@ function RowCells({
   lang: Locale;
   actionLabels: ActionLabels;
 }) {
-  const now = new Date();
-  const canCancel =
-    (booking.status === "PENDING" || booking.status === "CONFIRMED") && booking.endsAt > now;
-  const canReschedule = booking.status === "CONFIRMED" && booking.endsAt > now;
-
   return (
     <>
-      <td className="px-3 py-2">{format(booking.startsAt, "PPP p", { locale: dateFnsLocale })}</td>
+      <td className="px-3 py-2 whitespace-nowrap">{format(booking.startsAt, "PPP", { locale: dateFnsLocale })}</td>
+      <td className="px-3 py-2 whitespace-nowrap">{format(booking.startsAt, "p", { locale: dateFnsLocale })}</td>
       <td className="px-3 py-2">{booking.customer.name}</td>
       <td className="px-3 py-2">{booking.customer.phoneE164}</td>
       <td className="px-3 py-2">{booking.service.name}</td>
@@ -78,13 +126,11 @@ function RowCells({
         <span className={statusClass(booking.status)}>{booking.status}</span>
       </td>
       <td className="px-3 py-2 align-top">
-        <DashboardBookingActions
-          bookingId={booking.id}
+        <BookingActionsCell
+          booking={booking}
+          filterDate={filterDate}
           lang={lang}
-          canCancel={canCancel}
-          canReschedule={canReschedule}
-          defaultDate={filterDate}
-          labels={actionLabels}
+          actionLabels={actionLabels}
         />
       </td>
     </>
@@ -108,7 +154,8 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
         <table className="min-w-full text-left text-sm">
           <thead className="bg-[var(--primary-soft)] text-violet-900">
             <tr>
-              <th className="px-3 py-2">{tableLabels.dt}</th>
+              <th className="px-3 py-2">{tableLabels.date}</th>
+              <th className="px-3 py-2">{tableLabels.time}</th>
               <th className="px-3 py-2">{tableLabels.customer}</th>
               <th className="px-3 py-2">{tableLabels.phone}</th>
               <th className="px-3 py-2">{tableLabels.service}</th>
@@ -151,7 +198,11 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
     g.rows.sort((a, c) => a.startsAt.getTime() - c.startsAt.getTime());
   }
 
-  const staffSections = [...byStaff.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const staffSections = [...byStaff.entries()].sort((a, b) => {
+    const firstA = a[1].rows[0]?.startsAt.getTime() ?? Number.POSITIVE_INFINITY;
+    const firstB = b[1].rows[0]?.startsAt.getTime() ?? Number.POSITIVE_INFINITY;
+    return firstA - firstB || a[1].name.localeCompare(b[1].name);
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -164,7 +215,8 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
             <table className="min-w-full text-left text-sm">
               <thead className="bg-zinc-50 text-zinc-700">
                 <tr>
-                  <th className="px-3 py-2">{tableLabels.dt}</th>
+                  <th className="px-3 py-2">{tableLabels.date}</th>
+                  <th className="px-3 py-2">{tableLabels.time}</th>
                   <th className="px-3 py-2">{tableLabels.customer}</th>
                   <th className="px-3 py-2">{tableLabels.phone}</th>
                   <th className="px-3 py-2">{tableLabels.service}</th>
@@ -175,7 +227,12 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
               <tbody>
                 {group.rows.map((booking) => (
                   <tr key={booking.id} className="border-t border-zinc-100 hover:bg-violet-50/30">
-                    <td className="px-3 py-2">{format(booking.startsAt, "PPP p", { locale: dateFnsLocale })}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {format(booking.startsAt, "PPP", { locale: dateFnsLocale })}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {format(booking.startsAt, "p", { locale: dateFnsLocale })}
+                    </td>
                     <td className="px-3 py-2">{booking.customer.name}</td>
                     <td className="px-3 py-2">{booking.customer.phoneE164}</td>
                     <td className="px-3 py-2">{booking.service.name}</td>
@@ -183,16 +240,11 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
                       <span className={statusClass(booking.status)}>{booking.status}</span>
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <DashboardBookingActions
-                        bookingId={booking.id}
+                      <BookingActionsCell
+                        booking={booking}
+                        filterDate={filterDate}
                         lang={lang}
-                        canCancel={
-                          (booking.status === "PENDING" || booking.status === "CONFIRMED") &&
-                          booking.endsAt > new Date()
-                        }
-                        canReschedule={booking.status === "CONFIRMED" && booking.endsAt > new Date()}
-                        defaultDate={filterDate}
-                        labels={actionLabels}
+                        actionLabels={actionLabels}
                       />
                     </td>
                   </tr>

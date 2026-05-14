@@ -14,7 +14,20 @@ export type CalendarEventResult =
   | { ok: true; eventId: string | null }
   | { ok: false; eventId: null; reason: string };
 
-function resolveCalendarId(calendarId?: string | null) {
+export type GoogleCalendarEvent = {
+  id: string;
+  calendarId: string;
+  summary: string;
+  description: string | null;
+  start: Date;
+  end: Date;
+};
+
+export type CalendarEventsResult =
+  | { ok: true; events: GoogleCalendarEvent[] }
+  | { ok: false; events: GoogleCalendarEvent[]; reason: string };
+
+export function resolveGoogleCalendarId(calendarId?: string | null) {
   const staffCalendar = calendarId?.trim();
   if (staffCalendar) {
     return staffCalendar;
@@ -45,7 +58,7 @@ export async function listGoogleBusyRanges(params: {
   timeMin: Date;
   timeMax: Date;
 }): Promise<FreeBusyResult> {
-  const calendarId = resolveCalendarId(params.calendarId);
+  const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId) {
     return { ok: true, busy: [] };
   }
@@ -82,6 +95,60 @@ export async function listGoogleBusyRanges(params: {
   }
 }
 
+export async function listGoogleCalendarEvents(params: {
+  calendarId?: string | null;
+  timeMin: Date;
+  timeMax: Date;
+}): Promise<CalendarEventsResult> {
+  const calendarId = resolveGoogleCalendarId(params.calendarId);
+  if (!calendarId) {
+    return { ok: true, events: [] };
+  }
+
+  const calendar = getGoogleCalendarClient();
+  if (!calendar) {
+    return {
+      ok: false,
+      events: [],
+      reason: "Google Calendar is not configured but staff has a calendar ID",
+    };
+  }
+
+  try {
+    const response = await calendar.events.list({
+      calendarId,
+      timeMin: params.timeMin.toISOString(),
+      timeMax: params.timeMax.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime",
+      showDeleted: false,
+    });
+
+    const events = (response.data.items ?? []).flatMap((event) => {
+      const start = event.start?.dateTime;
+      const end = event.end?.dateTime;
+      if (!event.id || !start || !end) {
+        return [];
+      }
+      return [
+        {
+          id: event.id,
+          calendarId,
+          summary: event.summary?.trim() || "Google Calendar",
+          description: event.description ?? null,
+          start: new Date(start),
+          end: new Date(end),
+        },
+      ];
+    });
+
+    return { ok: true, events };
+  } catch (error) {
+    console.error("Google Calendar events list failed", error);
+    return { ok: false, events: [], reason: "Google Calendar events list request failed" };
+  }
+}
+
 export async function createGoogleCalendarEvent(params: {
   calendarId?: string | null;
   summary: string;
@@ -89,7 +156,7 @@ export async function createGoogleCalendarEvent(params: {
   start: Date;
   end: Date;
 }): Promise<CalendarEventResult> {
-  const calendarId = resolveCalendarId(params.calendarId);
+  const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId) {
     return { ok: true, eventId: null };
   }
@@ -127,7 +194,7 @@ export async function deleteGoogleCalendarEvent(params: {
   calendarId?: string | null;
   eventId?: string | null;
 }): Promise<CalendarMutationResult> {
-  const calendarId = resolveCalendarId(params.calendarId);
+  const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId || !params.eventId) {
     return { ok: true };
   }
@@ -164,7 +231,7 @@ export async function patchGoogleCalendarEvent(params: {
   start: Date;
   end: Date;
 }): Promise<CalendarMutationResult> {
-  const calendarId = resolveCalendarId(params.calendarId);
+  const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId || !params.eventId) {
     return { ok: true };
   }

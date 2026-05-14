@@ -5,7 +5,11 @@ import { z } from "zod";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { normalizePhone } from "@/lib/phone";
-import { createGoogleCalendarEvent, listGoogleBusyRanges } from "@/lib/google-calendar";
+import {
+  createGoogleCalendarEvent,
+  deleteGoogleCalendarEvent,
+  listGoogleBusyRanges,
+} from "@/lib/google-calendar";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import { scheduleBookingReminders } from "@/lib/reminders";
@@ -227,6 +231,10 @@ export async function POST(request: Request) {
         await sendBookingSms({ phoneE164, body: message });
       } catch (smsError) {
         console.error("SMS send failed after booking created; rolling back booking", smsError);
+        await deleteGoogleCalendarEvent({
+          calendarId: staff.calendarId,
+          eventId: eventResult.eventId,
+        }).catch(() => {});
         await prisma.booking.delete({ where: { id: booking.id } }).catch(() => {});
         return NextResponse.json(
           { error: lang === "el" ? "Αποτυχία αποστολής SMS. Δοκιμάστε ξανά." : "SMS failed. Please try again." },
