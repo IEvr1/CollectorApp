@@ -5,7 +5,7 @@ import { listAvailability } from "@/lib/booking";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
 import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
-import { todayIsoInTimeZone } from "@/lib/timezone";
+import { formatSalonTime, localeTagForLang, todayIsoInTimeZone } from "@/lib/timezone";
 
 const payloadSchema = z.object({
   serviceId: z.string().optional(),
@@ -70,11 +70,18 @@ export async function POST(request: Request) {
           })
       : [];
 
+  const intlLocale = localeTagForLang(lang);
+  const slotOptions = slots.map((iso) => ({
+    iso,
+    label: formatSalonTime(new Date(iso), salon.timezone, intlLocale),
+  }));
+
   return NextResponse.json({
     salon: { id: salon.id, name: salon.name, timezone: salon.timezone },
     minBookableDate,
     services: salon.services,
     staff: salon.staff,
     slots,
+    slotOptions,
   });
 }

@@ -1,11 +1,9 @@
 import Link from "next/link";
-import { format } from "date-fns";
-import { el, enGB } from "date-fns/locale";
 import { ensureSalonSeed } from "@/lib/bootstrap";
 import { isDashboardLinkAuthAvailable } from "@/lib/dashboard-auth";
 import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
-import { salonLocalDayBoundsUtc, todayIsoInTimeZone } from "@/lib/timezone";
+import { formatSalonDate, localeTagForLang, salonLocalDayBoundsUtc, todayIsoInTimeZone } from "@/lib/timezone";
 import { DashboardEmergencyPanel } from "@/app/dashboard/dashboard-emergency-panel";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -103,8 +101,11 @@ export default async function DashboardEmergencyPage({
     },
   });
   const mutationsAllowed = isDashboardLinkAuthAvailable();
-  const dateFnsLocale = lang === "el" ? el : enGB;
-  const dateLabel = format(new Date(`${dateStr}T12:00:00`), "PPP", { locale: dateFnsLocale });
+  const dateLabel = formatSalonDate(
+    salonLocalDayBoundsUtc(dateStr, salon.timezone).start,
+    salon.timezone,
+    localeTagForLang(lang),
+  );
   const dayExplanation =
     lang === "el"
       ? `Για την ${dateLabel} υπάρχουν ${activeDayCount} ενεργά ραντεβού (PENDING/CONFIRMED) σε όλο το salon. Θα ακυρωθούν όλα και θα σταλεί SMS σε κάθε πελάτη με σύνδεσμο επαναπρογραμματισμού.`

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import type { Booking, Customer, Service, Staff } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
+import { prisma } from "@/lib/prisma";
+import { parseLocale } from "@/lib/locale";
+import { formatSalonDateTimeDisplay, localeTagForLang } from "@/lib/timezone";
 
 type BookingWithRelations = Booking & {
   customer: Customer;
@@ -27,11 +29,17 @@ function phaseForBooking(
   return { uiPhase, canManage };
 }
 
-function serializeBookingSummary(booking: BookingWithRelations, now: Date) {
+function serializeBookingSummary(
+  booking: BookingWithRelations,
+  now: Date,
+  salonTimezone: string,
+  locale: string,
+) {
   const { uiPhase, canManage } = phaseForBooking(booking, now);
   return {
     id: booking.id,
     startsAt: booking.startsAt.toISOString(),
+    startsAtDisplay: formatSalonDateTimeDisplay(booking.startsAt, salonTimezone, locale),
     endsAt: booking.endsAt.toISOString(),
     status: booking.status,
     service: {
@@ -58,7 +66,10 @@ async function loadUpcomingConfirmed(customerId: string, salonId: string, now: D
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const lang = parseLocale(new URL(request.url).searchParams.get("lang"));
+  const intlLocale = localeTagForLang(lang);
+
   const session = await getManageSessionPayload();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -80,7 +91,9 @@ export async function GET() {
     const upcomingRows = customer
       ? await loadUpcomingConfirmed(customer.id, session.salonId, now)
       : [];
-    const upcomingBookings = upcomingRows.map((b) => serializeBookingSummary(b, now));
+    const upcomingBookings = upcomingRows.map((b) =>
+      serializeBookingSummary(b, now, salon.timezone, intlLocale),
+    );
     return NextResponse.json({
       salonName: salon.name,
       salonTimezone: salon.timezone,
@@ -109,7 +122,9 @@ export async function GET() {
   const { uiPhase, canManage } = phaseForBooking(booking, now);
 
   const upcomingRows = await loadUpcomingConfirmed(booking.customerId, session.salonId, now);
-  const upcomingBookings = upcomingRows.map((b) => serializeBookingSummary(b, now));
+  const upcomingBookings = upcomingRows.map((b) =>
+    serializeBookingSummary(b, now, salon.timezone, intlLocale),
+  );
 
   return NextResponse.json({
     salonName: salon.name,
@@ -119,6 +134,7 @@ export async function GET() {
     booking: {
       id: booking.id,
       startsAt: booking.startsAt.toISOString(),
+      startsAtDisplay: formatSalonDateTimeDisplay(booking.startsAt, salon.timezone, intlLocale),
       endsAt: booking.endsAt.toISOString(),
       status: booking.status,
       service: {

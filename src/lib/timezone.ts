@@ -135,3 +135,89 @@ export function isoDateInTimeZone(instant: Date, timeZone: string): string {
   }
   return `${y}-${m}-${d}`;
 }
+
+function dateTimeParts(instant: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(instant);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value;
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+  };
+}
+
+/** Salon-local datetime for SMS: `2026-05-15 14:30` (independent of server TZ). */
+export function formatSalonDateTime(instant: Date, timeZone: string): string {
+  const { year, month, day, hour, minute } = dateTimeParts(instant, timeZone);
+  if (!year || !month || !day || hour === undefined || minute === undefined) {
+    throw new Error("Could not format datetime in timezone");
+  }
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+/** Salon-local hour 0–23 for grouping slots (morning / afternoon). */
+export function hourInTimeZone(instant: Date, timeZone: string): number {
+  const { hour } = dateTimeParts(instant, timeZone);
+  if (hour === undefined) {
+    throw new Error("Could not resolve hour in timezone");
+  }
+  // ICU may emit "24" at midnight when hour12 is false.
+  return Number(hour) % 24;
+}
+
+/**
+ * Wall-clock `YYYY-MM-DDTHH:mm:ss` for Google Calendar (no UTC offset).
+ * Use with the matching `timeZone` field — do not combine with `.toISOString()` (Z).
+ */
+export function toSalonWallClockIso(instant: Date, timeZone: string): string {
+  const { year, month, day, hour, minute } = dateTimeParts(instant, timeZone);
+  if (!year || !month || !day || hour === undefined || minute === undefined) {
+    throw new Error("Could not format wall clock time in timezone");
+  }
+  const h = String(Number(hour) % 24).padStart(2, "0");
+  return `${year}-${month}-${day}T${h}:${minute}:00`;
+}
+
+export function localeTagForLang(lang: "el" | "en"): string {
+  return lang === "el" ? "el-CY" : "en-GB";
+}
+
+export function formatSalonDate(
+  instant: Date,
+  timeZone: string,
+  locale = "el-CY",
+): string {
+  return new Intl.DateTimeFormat(locale, { timeZone, dateStyle: "long" }).format(instant);
+}
+
+export function formatSalonTime(
+  instant: Date,
+  timeZone: string,
+  locale = "el-CY",
+): string {
+  return new Intl.DateTimeFormat(locale, { timeZone, timeStyle: "short" }).format(instant);
+}
+
+export function formatSalonDateTimeDisplay(
+  instant: Date,
+  timeZone: string,
+  locale = "el-CY",
+): string {
+  return new Intl.DateTimeFormat(locale, {
+    timeZone,
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(instant);
+}

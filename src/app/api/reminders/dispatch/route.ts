@@ -1,9 +1,9 @@
-import { format } from "date-fns";
 import { NextResponse } from "next/server";
 import { createDeepLinkToken } from "@/lib/deep-link-token";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
 import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
+import { formatSalonDateTime } from "@/lib/timezone";
 
 // Vercel cron is UTC-only; this keeps the daily run from missing 07:30 local reminders around DST.
 const DISPATCH_LOOKAHEAD_MS = 90 * 60 * 1000;
@@ -84,7 +84,7 @@ async function runDispatch(request: Request) {
 
     const base = getSmsLinkBaseUrl(request);
     const manageUrl = `${base}/l/${shortCode}`;
-    const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+    const when = formatSalonDateTime(booking.startsAt, booking.salon.timezone);
     const message = `${booking.salon.name}: Reminder ${when}. Manage Booking: ${manageUrl}`;
 
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body: message });

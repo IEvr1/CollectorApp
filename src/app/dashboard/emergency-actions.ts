@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { format } from "date-fns";
 import { headers } from "next/headers";
 import { z } from "zod";
 import type { Locale } from "@/lib/locale";
@@ -11,7 +10,7 @@ import { isDashboardMutationAuthorized } from "@/lib/dashboard-auth";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
 import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
-import { salonLocalDayBoundsUtc } from "@/lib/timezone";
+import { formatSalonDateTime, salonLocalDayBoundsUtc } from "@/lib/timezone";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -96,7 +95,7 @@ export async function emergencyCancelDayAndNotify(isoDate: string, lang: Locale)
         { ttlSeconds },
       );
       const manageUrl = `${base}/l/${shortCode}`;
-      const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+      const when = formatSalonDateTime(booking.startsAt, salon.timezone);
       const body = `${salon.name}: Cancelled ${when}. Manage Booking: ${manageUrl}`;
 
       await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });

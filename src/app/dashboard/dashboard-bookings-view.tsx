@@ -1,7 +1,6 @@
-import { format } from "date-fns";
-import { el, enGB } from "date-fns/locale";
 import type { Prisma } from "@prisma/client";
 import type { Locale } from "@/lib/locale";
+import { formatSalonDate, formatSalonTime, localeTagForLang } from "@/lib/timezone";
 import {
   DashboardBookingActions,
   DashboardCalendarOnlyActions,
@@ -52,6 +51,7 @@ type Props = {
   bookings: DashboardBookingRow[];
   view: "list" | "grouped";
   lang: Locale;
+  salonTimezone: string;
   filterDate: string;
   tableLabels: TableLabels;
   actionLabels: ActionLabels;
@@ -125,21 +125,27 @@ function BookingActionsCell({
 
 function RowCells({
   booking,
-  dateFnsLocale,
+  intlLocale,
+  salonTimezone,
   filterDate,
   lang,
   actionLabels,
 }: {
   booking: DashboardBookingRow;
-  dateFnsLocale: typeof el;
+  intlLocale: string;
+  salonTimezone: string;
   filterDate: string;
   lang: Locale;
   actionLabels: ActionLabels;
 }) {
   return (
     <>
-      <td className="px-3 py-2 whitespace-nowrap">{format(booking.startsAt, "PPP", { locale: dateFnsLocale })}</td>
-      <td className="px-3 py-2 whitespace-nowrap">{format(booking.startsAt, "p", { locale: dateFnsLocale })}</td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {formatSalonDate(booking.startsAt, salonTimezone, intlLocale)}
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {formatSalonTime(booking.startsAt, salonTimezone, intlLocale)}
+      </td>
       <td className="px-3 py-2">{booking.customer.name}</td>
       <td className="px-3 py-2">{booking.customer.phoneE164}</td>
       <td className="px-3 py-2">{booking.service.name}</td>
@@ -159,8 +165,16 @@ function RowCells({
   );
 }
 
-export function DashboardBookingsView({ bookings, view, lang, filterDate, tableLabels, actionLabels }: Props) {
-  const dateFnsLocale = lang === "el" ? el : enGB;
+export function DashboardBookingsView({
+  bookings,
+  view,
+  lang,
+  salonTimezone,
+  filterDate,
+  tableLabels,
+  actionLabels,
+}: Props) {
+  const intlLocale = localeTagForLang(lang);
 
   if (bookings.length === 0) {
     return (
@@ -194,7 +208,8 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
               >
                 <RowCells
                   booking={booking}
-                  dateFnsLocale={dateFnsLocale}
+                  intlLocale={intlLocale}
+                  salonTimezone={salonTimezone}
                   filterDate={filterDate}
                   lang={lang}
                   actionLabels={actionLabels}
@@ -250,10 +265,10 @@ export function DashboardBookingsView({ bookings, view, lang, filterDate, tableL
                 {group.rows.map((booking) => (
                   <tr key={booking.id} className="border-t border-zinc-100 hover:bg-violet-50/30">
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {format(booking.startsAt, "PPP", { locale: dateFnsLocale })}
+                      {formatSalonDate(booking.startsAt, salonTimezone, intlLocale)}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {format(booking.startsAt, "p", { locale: dateFnsLocale })}
+                      {formatSalonTime(booking.startsAt, salonTimezone, intlLocale)}
                     </td>
                     <td className="px-3 py-2">{booking.customer.name}</td>
                     <td className="px-3 py-2">{booking.customer.phoneE164}</td>

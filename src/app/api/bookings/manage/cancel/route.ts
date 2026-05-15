@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { format } from "date-fns";
 import { deleteGoogleCalendarEvent } from "@/lib/google-calendar";
+import { formatSalonDateTime } from "@/lib/timezone";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
 import { prisma } from "@/lib/prisma";
 import { sendBookingSms } from "@/lib/sms";
@@ -45,7 +45,7 @@ export async function POST() {
     }),
   ]);
 
-  const when = format(booking.startsAt, "yyyy-MM-dd HH:mm");
+  const when = formatSalonDateTime(booking.startsAt, booking.salon.timezone);
   const body = `${booking.salon.name}: Cancelled ${when}.`;
 
   try {

@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { toSalonWallClockIso } from "@/lib/timezone";
 
 export type BusyRange = {
   start: Date;
@@ -34,6 +35,16 @@ export function resolveGoogleCalendarId(calendarId?: string | null) {
   }
   const fallbackCalendar = process.env.GOOGLE_DEFAULT_CALENDAR_ID?.trim();
   return fallbackCalendar || null;
+}
+
+function calendarDateTime(instant: Date, timeZone?: string) {
+  if (!timeZone) {
+    return { dateTime: instant.toISOString() };
+  }
+  return {
+    dateTime: toSalonWallClockIso(instant, timeZone),
+    timeZone,
+  };
 }
 
 function getGoogleCalendarClient() {
@@ -155,6 +166,7 @@ export async function createGoogleCalendarEvent(params: {
   description?: string;
   start: Date;
   end: Date;
+  timeZone?: string;
 }): Promise<CalendarEventResult> {
   const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId) {
@@ -176,8 +188,8 @@ export async function createGoogleCalendarEvent(params: {
       requestBody: {
         summary: params.summary,
         description: params.description,
-        start: { dateTime: params.start.toISOString() },
-        end: { dateTime: params.end.toISOString() },
+        start: calendarDateTime(params.start, params.timeZone),
+        end: calendarDateTime(params.end, params.timeZone),
       },
     });
 
@@ -230,6 +242,7 @@ export async function patchGoogleCalendarEvent(params: {
   description?: string;
   start: Date;
   end: Date;
+  timeZone?: string;
 }): Promise<CalendarMutationResult> {
   const calendarId = resolveGoogleCalendarId(params.calendarId);
   if (!calendarId || !params.eventId) {
@@ -248,8 +261,8 @@ export async function patchGoogleCalendarEvent(params: {
       requestBody: {
         ...(params.summary !== undefined ? { summary: params.summary } : {}),
         ...(params.description !== undefined ? { description: params.description } : {}),
-        start: { dateTime: params.start.toISOString() },
-        end: { dateTime: params.end.toISOString() },
+        start: calendarDateTime(params.start, params.timeZone),
+        end: calendarDateTime(params.end, params.timeZone),
       },
     });
     return { ok: true };

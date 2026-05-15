@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listAvailability } from "@/lib/booking";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
+import { parseLocale } from "@/lib/locale";
 import { prisma } from "@/lib/prisma";
+import { formatSalonTime, localeTagForLang } from "@/lib/timezone";
 
 const bodySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -49,5 +51,12 @@ export async function POST(request: Request) {
     excludeBookingId: booking.id,
   });
 
-  return NextResponse.json({ slots });
+  const lang = parseLocale(new URL(request.url).searchParams.get("lang"));
+  const intlLocale = localeTagForLang(lang);
+  const slotOptions = slots.map((iso) => ({
+    iso,
+    label: formatSalonTime(new Date(iso), salon.timezone, intlLocale),
+  }));
+
+  return NextResponse.json({ slots, slotOptions });
 }

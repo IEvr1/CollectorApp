@@ -1,4 +1,4 @@
-import { addMinutes, format } from "date-fns";
+import { addMinutes } from "date-fns";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -18,7 +18,7 @@ import { isSalonClosedOnLocalDate } from "@/lib/salon-closure";
 import { sendBookingSms } from "@/lib/sms";
 import { getSmsLinkBaseUrl } from "@/lib/sms-link-base";
 import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
-import { isoDateInTimeZone } from "@/lib/timezone";
+import { formatSalonDateTime, isoDateInTimeZone } from "@/lib/timezone";
 
 const bookingSchema = z.object({
   serviceId: z.string(),
@@ -235,6 +235,7 @@ export async function POST(request: Request) {
         description: `Phone: ${customer.phoneE164}`,
         start: booking.startsAt,
         end: booking.endsAt,
+        timeZone: salon.timezone,
       });
 
       if (!eventResult.ok) {
@@ -256,7 +257,7 @@ export async function POST(request: Request) {
       });
       const base = getSmsLinkBaseUrl(request);
       const manageUrl = `${base}/l/${shortCode}`;
-      const when = format(startsAt, "yyyy-MM-dd HH:mm");
+      const when = formatSalonDateTime(startsAt, salon.timezone);
       const message = `${salon.name}: Booked ${when}. Manage Booking: ${manageUrl}`;
 
       try {

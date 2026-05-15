@@ -4,7 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { normalizePhone } from "@/lib/phone";
 import { parseLocale, type Locale } from "@/lib/locale";
 import { ANY_AVAILABLE_STAFF_ID } from "@/lib/staff-selection";
-import { todayIsoInTimeZone } from "@/lib/timezone";
+import {
+  formatSalonDateTimeDisplay,
+  formatSalonTime,
+  hourInTimeZone,
+  localeTagForLang,
+  todayIsoInTimeZone,
+} from "@/lib/timezone";
 
 type Service = { id: string; name: string; durationMin: number };
 type Staff = { id: string; name: string };
@@ -12,6 +18,7 @@ type Staff = { id: string; name: string };
 type ManageBooking = {
   id: string;
   startsAt: string;
+  startsAtDisplay?: string;
   endsAt: string;
   status: string;
   service: { id: string; name: string; durationMin: number };
@@ -34,7 +41,17 @@ type ManageSummary = {
   upcomingBookings?: ManageUpcomingBooking[];
 };
 
-const todayStr = new Date().toISOString().slice(0, 10);
+const DEFAULT_SALON_TIMEZONE = "Europe/Nicosia";
+
+type SlotOption = { iso: string; label: string };
+
+function slotLabelsFromOptions(options: SlotOption[]): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const option of options) {
+    labels[option.iso] = option.label;
+  }
+  return labels;
+}
 
 export default function ChatPage() {
   const [locale, setLocale] = useState<Locale>(() => {
@@ -163,16 +180,18 @@ export default function ChatPage() {
           linkedExistingNameUpdated: "",
         };
 
-  const intlLocale = locale === "el" ? "el-CY" : "en-GB";
+  const intlLocale = localeTagForLang(locale);
 
   const [salonName, setSalonName] = useState("");
+  const [salonTimezone, setSalonTimezone] = useState(DEFAULT_SALON_TIMEZONE);
   const [services, setServices] = useState<Service[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [serviceId, setServiceId] = useState("");
   const [staffId, setStaffId] = useState("");
-  const [date, setDate] = useState(todayStr);
+  const [date, setDate] = useState("");
   const [minBookableDate, setMinBookableDate] = useState<string | null>(null);
   const [slots, setSlots] = useState<string[]>([]);
+  const [slotLabels, setSlotLabels] = useState<Record<string, string>>({});
   const [slot, setSlot] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState(() => {
@@ -208,17 +227,21 @@ export default function ChatPage() {
   );
 
   const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
+  const activeSalonTimezone = manage?.salonTimezone ?? salonTimezone;
   const [identity, setIdentity] = useState<"pending" | "returning" | "new">("returning");
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [manageView, setManageView] = useState<"home" | "reschedule">("home");
   const [rebookActive, setRebookActive] = useState(false);
   const [manageSlots, setManageSlots] = useState<string[]>([]);
+  const [manageSlotLabels, setManageSlotLabels] = useState<Record<string, string>>({});
   const [manageSlot, setManageSlot] = useState("");
   const [manageBusy, setManageBusy] = useState(false);
   const [focusBusy, setFocusBusy] = useState(false);
 
   const loadManageSummary = useCallback(async () => {
-    const response = await fetch("/api/bookings/manage/summary", { credentials: "include" });
+    const response = await fetch(`/api/bookings/manage/summary?lang=${locale}`, {
+      credentials: "include",
+    });
     if (response.status === 401) {
       setManage(null);
       return;
@@ -242,7 +265,7 @@ export default function ChatPage() {
         setPhone(data.customerPhone);
       }
     }
-  }, [identityConfirmed]);
+  }, [identityConfirmed, locale]);
 
   useEffect(() => {
     void loadManageSummary();
@@ -321,10 +344,23 @@ export default function ChatPage() {
       }
       if (typeof data.minBookableDate === "string") {
         setMinBookableDate(data.minBookableDate);
+        if (!date) {
+          setDate(data.minBookableDate);
+        }
+      }
+      if (typeof data.salon?.timezone === "string") {
+        setSalonTimezone(data.salon.timezone);
       }
       setServices(data.services ?? []);
       setStaff(data.staff ?? []);
-      setSlots(data.slots ?? []);
+      const options = (data.slotOptions ?? []) as SlotOption[];
+      if (options.length > 0) {
+        setSlots(options.map((option) => option.iso));
+        setSlotLabels(slotLabelsFromOptions(options));
+      } else {
+        setSlots(data.slots ?? []);
+        setSlotLabels({});
+      }
     }
 
     void load();
@@ -347,7 +383,7 @@ export default function ChatPage() {
     }
     let cancelled = false;
     (async () => {
-      const response = await fetch("/api/bookings/manage/slots", {
+      const response = await fetch(`/api/bookings/manage/slots?lang=${locale}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -355,13 +391,20 @@ export default function ChatPage() {
       });
       const data = await response.json();
       if (!cancelled && response.ok) {
-        setManageSlots(data.slots ?? []);
+        const options = (data.slotOptions ?? []) as SlotOption[];
+        if (options.length > 0) {
+          setManageSlots(options.map((option) => option.iso));
+          setManageSlotLabels(slotLabelsFromOptions(options));
+        } else {
+          setManageSlots(data.slots ?? []);
+          setManageSlotLabels({});
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [manageView, manage?.booking, date]);
+  }, [manageView, manage?.booking, date, locale]);
 
   function selectService(id: string) {
     setServiceId(id);
@@ -392,7 +435,7 @@ export default function ChatPage() {
     const morning: string[] = [];
     const afternoon: string[] = [];
     for (const slotIso of source) {
-      const hour = new Date(slotIso).getHours();
+      const hour = hourInTimeZone(new Date(slotIso), activeSalonTimezone);
       if (hour < 12) {
         morning.push(slotIso);
       } else {
@@ -400,7 +443,7 @@ export default function ChatPage() {
       }
     }
     return { morningSlots: morning, afternoonSlots: afternoon };
-  }, [slots, manageSlots, manageView]);
+  }, [slots, manageSlots, manageView, activeSalonTimezone]);
 
   const hasService = Boolean(serviceId);
   const hasStaff = Boolean(staffId);
@@ -471,7 +514,7 @@ export default function ChatPage() {
     setManageSlot("");
     setName(manage.customerName ?? "");
     setPhone(manage.customerPhone);
-    setDate(todayStr);
+    setDate(todayIsoInTimeZone(activeSalonTimezone));
     setResult("");
     setResultTone("neutral");
     setPhoneRetryMessage(null);
@@ -487,7 +530,7 @@ export default function ChatPage() {
     setStaffId(b.staff.id);
     setName(manage.customerName ?? "");
     setPhone(manage.customerPhone);
-    setDate(todayStr);
+    setDate(todayIsoInTimeZone(activeSalonTimezone));
     setSlot("");
     setSlots([]);
     setManage(null);
@@ -804,6 +847,7 @@ export default function ChatPage() {
                 manage={manage}
                 upcoming={upcomingSwitcher.upcoming}
                 intlLocale={intlLocale}
+                salonTimezone={activeSalonTimezone}
                 label={t.otherAppointments}
                 disabled={focusBusy || manageBusy}
                 onSelect={(id) => void onFocusBooking(id)}
@@ -819,10 +863,12 @@ export default function ChatPage() {
               </p>
               <p>
                 {t.time}:{" "}
-                {new Date(manage.booking.startsAt).toLocaleString(intlLocale, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
+                {manage.booking.startsAtDisplay ??
+                  formatSalonDateTimeDisplay(
+                    new Date(manage.booking.startsAt),
+                    activeSalonTimezone,
+                    intlLocale,
+                  )}
               </p>
             </div>
             <p className="text-xs text-zinc-500">{t.manageDisclaimer}</p>
@@ -843,7 +889,7 @@ export default function ChatPage() {
                   setResultTone("neutral");
                   setManageView("reschedule");
                   setManageSlot("");
-                  setDate(todayStr);
+                  setDate(todayIsoInTimeZone(activeSalonTimezone));
                 }}
                 className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 disabled:opacity-50"
               >
@@ -880,6 +926,7 @@ export default function ChatPage() {
                   manage={manage}
                   upcoming={upcomingSwitcher.upcoming}
                   intlLocale={intlLocale}
+                  salonTimezone={activeSalonTimezone}
                   label={t.otherAppointments}
                   disabled={focusBusy || manageBusy}
                   onSelect={(id) => void onFocusBooking(id)}
@@ -903,6 +950,7 @@ export default function ChatPage() {
                 manage={manage}
                 upcoming={upcomingSwitcher.upcoming}
                 intlLocale={intlLocale}
+                salonTimezone={activeSalonTimezone}
                 label={t.otherAppointments}
                 disabled={focusBusy || manageBusy}
                 onSelect={(id) => void onFocusBooking(id)}
@@ -946,10 +994,8 @@ export default function ChatPage() {
                           }}
                           className={choiceClass(manageSlot === slotIso)}
                         >
-                          {new Date(slotIso).toLocaleTimeString(intlLocale, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {manageSlotLabels[slotIso] ??
+                            formatSalonTime(new Date(slotIso), activeSalonTimezone, intlLocale)}
                         </button>
                       ))}
                     </CardGrid>
@@ -971,10 +1017,8 @@ export default function ChatPage() {
                           }}
                           className={choiceClass(manageSlot === slotIso)}
                         >
-                          {new Date(slotIso).toLocaleTimeString(intlLocale, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {manageSlotLabels[slotIso] ??
+                            formatSalonTime(new Date(slotIso), activeSalonTimezone, intlLocale)}
                         </button>
                       ))}
                     </CardGrid>
@@ -986,10 +1030,11 @@ export default function ChatPage() {
               <>
                 <Bubble
                   role="user"
-                  text={new Date(manageSlot).toLocaleString(intlLocale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                  text={formatSalonDateTimeDisplay(
+                    new Date(manageSlot),
+                    activeSalonTimezone,
+                    intlLocale,
+                  )}
                 />
                 <div className="max-w-[85%] rounded-xl border border-violet-100 bg-[var(--primary-soft)] p-3 text-sm text-zinc-800 sm:max-w-full">
                   <p className="font-semibold text-violet-800">{t.bookingSummary}</p>
@@ -1001,10 +1046,11 @@ export default function ChatPage() {
                   </p>
                   <p>
                     {t.time}:{" "}
-                    {new Date(manageSlot).toLocaleString(intlLocale, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}
+                    {formatSalonDateTimeDisplay(
+                      new Date(manageSlot),
+                      activeSalonTimezone,
+                      intlLocale,
+                    )}
                   </p>
                 </div>
                 <button
@@ -1143,10 +1189,8 @@ export default function ChatPage() {
                               }}
                               className={choiceClass(slot === slotIso)}
                             >
-                              {new Date(slotIso).toLocaleTimeString(intlLocale, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                              {slotLabels[slotIso] ??
+                                formatSalonTime(new Date(slotIso), activeSalonTimezone, intlLocale)}
                             </button>
                           ))}
                         </CardGrid>
@@ -1168,10 +1212,8 @@ export default function ChatPage() {
                               }}
                               className={choiceClass(slot === slotIso)}
                             >
-                              {new Date(slotIso).toLocaleTimeString(intlLocale, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                              {slotLabels[slotIso] ??
+                                formatSalonTime(new Date(slotIso), activeSalonTimezone, intlLocale)}
                             </button>
                           ))}
                         </CardGrid>
@@ -1186,10 +1228,7 @@ export default function ChatPage() {
               <>
                 <Bubble
                   role="user"
-                  text={new Date(slot).toLocaleString(intlLocale, {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                  text={formatSalonDateTimeDisplay(new Date(slot), activeSalonTimezone, intlLocale)}
                 />
                 <Bubble role="assistant" text={t.details} />
                 <div className="grid max-w-[85%] gap-2 sm:max-w-full sm:grid-cols-2">
@@ -1225,7 +1264,9 @@ export default function ChatPage() {
                   </p>
                   <p>
                     {t.time}:{" "}
-                    {slot ? new Date(slot).toLocaleString(intlLocale) : "-"}
+                    {slot
+                      ? formatSalonDateTimeDisplay(new Date(slot), activeSalonTimezone, intlLocale)
+                      : "-"}
                   </p>
                 </div>
 
@@ -1265,6 +1306,7 @@ function ManageUpcomingSwitcher({
   manage,
   upcoming,
   intlLocale,
+  salonTimezone,
   label,
   disabled,
   onSelect,
@@ -1272,6 +1314,7 @@ function ManageUpcomingSwitcher({
   manage: ManageSummary;
   upcoming: ManageUpcomingBooking[];
   intlLocale: string;
+  salonTimezone: string;
   label: string;
   disabled: boolean;
   onSelect: (bookingId: string) => void;
@@ -1301,10 +1344,8 @@ function ManageUpcomingSwitcher({
               } ${disabled || redundant ? "opacity-60" : ""}`}
             >
               <span className="font-medium">
-                {new Date(b.startsAt).toLocaleString(intlLocale, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                })}
+                {b.startsAtDisplay ??
+                  formatSalonDateTimeDisplay(new Date(b.startsAt), salonTimezone, intlLocale)}
               </span>
               <span className="mt-0.5 block text-zinc-600">
                 {b.service.name} · {b.staff.name}

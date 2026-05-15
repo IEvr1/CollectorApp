@@ -284,6 +284,7 @@ export default async function DashboardPage({
         bookings={dashboardRows}
         view={view}
         lang={lang}
+        salonTimezone={salon.timezone}
         filterDate={dateStr}
         tableLabels={{
           date: t.date,

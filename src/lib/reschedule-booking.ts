@@ -135,6 +135,7 @@ export async function rescheduleBookingCore(
         eventId: booking.googleEventId,
         start: startsAt,
         end: endsAt,
+        timeZone: booking.salon.timezone,
       });
 
       if (!patch.ok) {

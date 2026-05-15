@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { format } from "date-fns";
 import { z } from "zod";
+import { formatSalonDateTime } from "@/lib/timezone";
 import { getManageSessionPayload } from "@/lib/manage-from-request";
 import { prisma } from "@/lib/prisma";
 import { rescheduleBookingCore } from "@/lib/reschedule-booking";
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     return mapErrorToResponse(result.error);
   }
 
-  const when = format(result.startsAt, "yyyy-MM-dd HH:mm");
+  const when = formatSalonDateTime(result.startsAt, booking.salon.timezone);
   const body = `${booking.salon.name}: New time ${when}.`;
   try {
     await sendBookingSms({ phoneE164: booking.customer.phoneE164, body });
