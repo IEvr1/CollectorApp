@@ -1,0 +1,1 @@
+Reminder: Your monthly charge of €{amount} for {month} is due. Ref: {reference}

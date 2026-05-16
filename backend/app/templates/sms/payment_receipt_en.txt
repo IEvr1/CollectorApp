@@ -1,0 +1,1 @@
+Confirmed: We received €{amount} for {month}. Thank you! Ref: {reference}
