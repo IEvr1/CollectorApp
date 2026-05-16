@@ -1191,14 +1191,14 @@ export default function ChatPage() {
                 {t.backToAppointment}
               </button>
             )}
-            {!hasService && (
+            {services.length > 0 && (
               <CardGrid>
                 {services.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => selectService(item.id)}
-                    className={choiceClass(false)}
+                    className={choiceClass(serviceId === item.id)}
                   >
                     <p className="font-medium">{item.name}</p>
                     <p className="text-xs text-zinc-500">{item.durationMin} min</p>
@@ -1207,16 +1207,14 @@ export default function ChatPage() {
               </CardGrid>
             )}
 
-            {hasService && selectedService && <Bubble role="user" text={selectedService.name} />}
-
             {hasService && selectedService && <Bubble role="assistant" text={t.pickStaff} />}
 
-            {hasService && selectedService && !hasStaff && (
+            {hasService && selectedService && (
                 <CardGrid>
                   <button
                     type="button"
                     onClick={() => selectStaff(ANY_AVAILABLE_STAFF_ID)}
-                    className={choiceClass(false)}
+                    className={choiceClass(staffId === ANY_AVAILABLE_STAFF_ID)}
                   >
                     {t.anyAvailableStaff}
                   </button>
@@ -1225,7 +1223,7 @@ export default function ChatPage() {
                       key={member.id}
                       type="button"
                       onClick={() => selectStaff(member.id)}
-                      className={choiceClass(false)}
+                      className={choiceClass(staffId === member.id)}
                     >
                       {member.name}
                     </button>
@@ -1235,7 +1233,6 @@ export default function ChatPage() {
 
             {hasStaff && selectedStaffName && (
               <div ref={dateTimeStepRef} className="flex flex-col gap-3">
-                <Bubble role="user" text={selectedStaffName} />
                 <Bubble role="assistant" text={t.pickDate} />
                 <div className="max-w-[85%]">
                   <input
