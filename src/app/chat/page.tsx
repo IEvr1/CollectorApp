@@ -208,10 +208,16 @@ export default function ChatPage() {
   const [phoneRetryMessage, setPhoneRetryMessage] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const bookingRequestInFlightRef = useRef(false);
   const manageRequestInFlightRef = useRef(false);
 
   const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const end = chatEndRef.current;
+    if (end) {
+      end.scrollIntoView({ block: "end", inline: "nearest", behavior });
+      return;
+    }
     const el = chatScrollRef.current;
     if (!el) {
       return;
@@ -221,7 +227,9 @@ export default function ChatPage() {
 
   const scrollChatToBottomAfterPaint = useCallback(
     (behavior: ScrollBehavior = "smooth") => {
-      window.requestAnimationFrame(() => scrollChatToBottom(behavior));
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => scrollChatToBottom(behavior));
+      });
     },
     [scrollChatToBottom],
   );
@@ -283,7 +291,18 @@ export default function ChatPage() {
   }, [locale, t.linkExpired]);
 
   useLayoutEffect(() => {
-    scrollChatToBottom();
+    let cancelled = false;
+    const outer = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (!cancelled) {
+          scrollChatToBottom("auto");
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(outer);
+    };
   }, [
     scrollChatToBottom,
     serviceId,
@@ -478,6 +497,7 @@ export default function ChatPage() {
     const params = new URLSearchParams();
     params.set("lang", locale);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    scrollChatToBottomAfterPaint();
   }
 
   async function onReturningCustomer() {
@@ -498,6 +518,7 @@ export default function ChatPage() {
     if (manage?.booking && ["past", "cancelled", "completed"].includes(manage.uiPhase)) {
       setRebookActive(false);
     }
+    scrollChatToBottomAfterPaint();
   }
 
   function onAdditionalAppointment() {
@@ -518,6 +539,7 @@ export default function ChatPage() {
     setResult("");
     setResultTone("neutral");
     setPhoneRetryMessage(null);
+    scrollChatToBottomAfterPaint();
   }
 
   async function onBookAgain() {
@@ -542,6 +564,7 @@ export default function ChatPage() {
     const params = new URLSearchParams();
     params.set("lang", locale);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+    scrollChatToBottomAfterPaint();
   }
 
   async function onCancelBooking() {
@@ -561,11 +584,13 @@ export default function ChatPage() {
       if (!response.ok) {
         setResult(t.cancelFailed);
         setResultTone("error");
+        scrollChatToBottomAfterPaint();
         return;
       }
       setResult(t.cancelledOk);
       setResultTone("success");
       await loadManageSummary();
+      scrollChatToBottomAfterPaint();
     } finally {
       setManageBusy(false);
       manageRequestInFlightRef.current = false;
@@ -592,6 +617,7 @@ export default function ChatPage() {
         const data = await response.json().catch(() => ({}));
         setResult((data as { error?: string }).error ?? t.rescheduleFailed);
         setResultTone("error");
+        scrollChatToBottomAfterPaint();
         return;
       }
       setResult(t.rescheduleOk);
@@ -599,6 +625,7 @@ export default function ChatPage() {
       setManageView("home");
       setManageSlot("");
       await loadManageSummary();
+      scrollChatToBottomAfterPaint();
     } finally {
       setManageBusy(false);
       manageRequestInFlightRef.current = false;
@@ -613,6 +640,7 @@ export default function ChatPage() {
       setPhoneRetryMessage(null);
       setResult(t.missing);
       setResultTone("error");
+      scrollChatToBottomAfterPaint();
       return;
     }
 
@@ -622,6 +650,7 @@ export default function ChatPage() {
       setResult("");
       setResultTone("neutral");
       setPhoneRetryMessage(t.phoneRetry);
+      scrollChatToBottomAfterPaint();
       return;
     }
 
@@ -663,6 +692,7 @@ export default function ChatPage() {
           setResult(data.error ?? t.failed);
           setResultTone("error");
         }
+        scrollChatToBottomAfterPaint();
         return;
       }
 
@@ -684,6 +714,7 @@ export default function ChatPage() {
         setSlot("");
         await loadManageSummary();
       }
+      scrollChatToBottomAfterPaint();
     } finally {
       setBusy(false);
       bookingRequestInFlightRef.current = false;
@@ -757,11 +788,13 @@ export default function ChatPage() {
       if (!response.ok) {
         setResult(locale === "el" ? "Η εναλλαγή ραντεβού απέτυχε." : "Could not switch appointment.");
         setResultTone("error");
+        scrollChatToBottomAfterPaint();
         return;
       }
       setManageView("home");
       setManageSlot("");
       await loadManageSummary();
+      scrollChatToBottomAfterPaint();
     } finally {
       setFocusBusy(false);
     }
@@ -816,7 +849,9 @@ export default function ChatPage() {
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
-                onClick={() => void onReturningCustomer()}
+                onClick={() => {
+                  void onReturningCustomer();
+                }}
                 className="rounded-xl border border-violet-300 bg-[var(--primary-soft)] px-4 py-2 text-sm font-medium text-violet-900"
               >
                 {t.imCustomer}
@@ -890,6 +925,7 @@ export default function ChatPage() {
                   setManageView("reschedule");
                   setManageSlot("");
                   setDate(todayIsoInTimeZone(activeSalonTimezone));
+                  scrollChatToBottomAfterPaint();
                 }}
                 className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 disabled:opacity-50"
               >
@@ -1296,6 +1332,7 @@ export default function ChatPage() {
             }
           />
         )}
+        <div ref={chatEndRef} className="h-px w-full shrink-0" aria-hidden />
         </div>
       </div>
     </div>
