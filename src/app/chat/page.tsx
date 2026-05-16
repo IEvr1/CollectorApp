@@ -42,6 +42,7 @@ type ManageSummary = {
 };
 
 const DEFAULT_SALON_TIMEZONE = "Europe/Nicosia";
+const CHAT_SCROLL_TOP_PADDING = 12;
 
 type SlotOption = { iso: string; label: string };
 
@@ -210,8 +211,29 @@ export default function ChatPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const dateTimeStepRef = useRef<HTMLDivElement>(null);
+  const rescheduleDateStepRef = useRef<HTMLDivElement>(null);
   const bookingRequestInFlightRef = useRef(false);
   const manageRequestInFlightRef = useRef(false);
+
+  const scrollChatToRef = useCallback(
+    (
+      target: HTMLElement | null,
+      behavior: ScrollBehavior = "auto",
+      topOffset = CHAT_SCROLL_TOP_PADDING,
+    ) => {
+      const container = chatScrollRef.current;
+      if (!target || !container) {
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const nextTop =
+        container.scrollTop + (targetRect.top - containerRect.top) - topOffset;
+      container.scrollTo({ top: Math.max(0, nextTop), behavior });
+    },
+    [],
+  );
 
   const scrollChatToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const end = chatEndRef.current;
@@ -226,6 +248,24 @@ export default function ChatPage() {
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
+  const scrollChatToActiveStep = useCallback(
+    (behavior: ScrollBehavior = "auto") => {
+      const onBookingDateStep = Boolean(staffId) && !slot;
+      const onRescheduleDateStep = manageView === "reschedule" && !manageSlot;
+
+      if (onBookingDateStep && dateTimeStepRef.current) {
+        scrollChatToRef(dateTimeStepRef.current, behavior);
+        return;
+      }
+      if (onRescheduleDateStep && rescheduleDateStepRef.current) {
+        scrollChatToRef(rescheduleDateStepRef.current, behavior);
+        return;
+      }
+      scrollChatToBottom(behavior);
+    },
+    [staffId, slot, manageView, manageSlot, scrollChatToRef, scrollChatToBottom],
+  );
+
   const scrollChatToBottomAfterPaint = useCallback(
     (behavior: ScrollBehavior = "smooth") => {
       window.requestAnimationFrame(() => {
@@ -233,6 +273,15 @@ export default function ChatPage() {
       });
     },
     [scrollChatToBottom],
+  );
+
+  const scrollChatToActiveStepAfterPaint = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => scrollChatToActiveStep(behavior));
+      });
+    },
+    [scrollChatToActiveStep],
   );
 
   const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
@@ -296,7 +345,7 @@ export default function ChatPage() {
     const outer = window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         if (!cancelled) {
-          scrollChatToBottom("auto");
+          scrollChatToActiveStep("auto");
         }
       });
     });
@@ -305,7 +354,7 @@ export default function ChatPage() {
       window.cancelAnimationFrame(outer);
     };
   }, [
-    scrollChatToBottom,
+    scrollChatToActiveStep,
     serviceId,
     staffId,
     date,
@@ -334,11 +383,11 @@ export default function ChatPage() {
       return;
     }
     const ro = new ResizeObserver(() => {
-      scrollChatToBottom();
+      scrollChatToActiveStep();
     });
     ro.observe(content);
     return () => ro.disconnect();
-  }, [scrollChatToBottom]);
+  }, [scrollChatToActiveStep]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -436,7 +485,7 @@ export default function ChatPage() {
   function selectStaff(id: string) {
     setStaffId(id);
     setSlot("");
-    scrollChatToBottomAfterPaint();
+    scrollChatToActiveStepAfterPaint();
   }
 
   const selectedService = useMemo(
@@ -926,7 +975,7 @@ export default function ChatPage() {
                   setManageView("reschedule");
                   setManageSlot("");
                   setDate(todayIsoInTimeZone(activeSalonTimezone));
-                  scrollChatToBottomAfterPaint();
+                  scrollChatToActiveStepAfterPaint();
                 }}
                 className="rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 disabled:opacity-50"
               >
@@ -993,23 +1042,24 @@ export default function ChatPage() {
                 onSelect={(id) => void onFocusBooking(id)}
               />
             )}
-            <Bubble role="assistant" text={t.rescheduleTitle} />
-            <div className="max-w-[85%]">
-              <input
-                value={date}
-                min={
-                  manage?.salonTimezone
-                    ? todayIsoInTimeZone(manage.salonTimezone)
-                    : (minBookableDate ?? undefined)
-                }
-                onChange={(event) => {
-                  setDate(event.target.value);
-                  setManageSlot("");
-                }}
-                type="date"
-                className={datePickerInputClassName}
-              />
-            </div>
+            <div ref={rescheduleDateStepRef} className="flex flex-col gap-3">
+              <Bubble role="assistant" text={t.rescheduleTitle} />
+              <div className="max-w-[85%]">
+                <input
+                  value={date}
+                  min={
+                    manage?.salonTimezone
+                      ? todayIsoInTimeZone(manage.salonTimezone)
+                      : (minBookableDate ?? undefined)
+                  }
+                  onChange={(event) => {
+                    setDate(event.target.value);
+                    setManageSlot("");
+                  }}
+                  type="date"
+                  className={datePickerInputClassName}
+                />
+              </div>
             {manageSlots.length === 0 ? (
               <p className="rounded-xl bg-zinc-100 px-3 py-2 text-sm text-zinc-600">{t.noSlots}</p>
             ) : (
@@ -1058,6 +1108,7 @@ export default function ChatPage() {
                 )}
               </div>
             )}
+            </div>
             {manageSlot && (
               <>
                 <Bubble
@@ -1183,7 +1234,7 @@ export default function ChatPage() {
             )}
 
             {hasStaff && selectedStaffName && (
-              <>
+              <div ref={dateTimeStepRef} className="flex flex-col gap-3">
                 <Bubble role="user" text={selectedStaffName} />
                 <Bubble role="assistant" text={t.pickDate} />
                 <div className="max-w-[85%]">
@@ -1248,7 +1299,7 @@ export default function ChatPage() {
                     )}
                   </div>
                 )}
-              </>
+              </div>
             )}
 
             {hasSlot && (
