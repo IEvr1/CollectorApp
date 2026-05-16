@@ -83,7 +83,9 @@ export default function ChatPage() {
           time: "Ώρα",
           booking: "Καταχώρηση...",
           bookNow: "Κράτηση Ραντεβού",
-          missing: "Συμπληρώστε όλα τα πεδία πριν την κράτηση.",
+          missingPrefix: "Συμπληρώστε πριν την κράτηση:",
+          pickService: "Υπηρεσία",
+          pickTime: "Ώρα",
           phoneRetry:
             "Βάλτε 8 ψηφία κυπριακού κινητού (π.χ. 99XXXXXX, 98XXXXXX, χωρίς +357).",
           failed: "Η κράτηση απέτυχε.",
@@ -139,7 +141,9 @@ export default function ChatPage() {
           time: "Time",
           booking: "Booking...",
           bookNow: "Book Appointment",
-          missing: "Please complete all fields before booking.",
+          missingPrefix: "Please complete before booking:",
+          pickService: "Service",
+          pickTime: "Time",
           phoneRetry:
             "Enter 8 digits of a Cyprus mobile (e.g. 99XXXXXX, 98XXXXXX, without +357).",
           failed: "Booking failed.",
@@ -203,6 +207,9 @@ export default function ChatPage() {
     return new URLSearchParams(window.location.search).get("phone") ?? "";
   });
   const [result, setResult] = useState("");
+  const [missingFields, setMissingFields] = useState<
+    { label: string; highlight: boolean }[] | null
+  >(null);
   const [resultTone, setResultTone] = useState<"success" | "error" | "neutral">(
     "neutral",
   );
@@ -360,6 +367,7 @@ export default function ChatPage() {
     date,
     slot,
     result,
+    missingFields,
     slots,
     services.length,
     staff.length,
@@ -686,9 +694,26 @@ export default function ChatPage() {
     if (bookingRequestInFlightRef.current) {
       return;
     }
-    if (!serviceId || !staffId || !slot || !name || !phone) {
+    if (!serviceId || !staffId || !slot || !name.trim() || !phone.trim()) {
       setPhoneRetryMessage(null);
-      setResult(t.missing);
+      const fields: { label: string; highlight: boolean }[] = [];
+      if (!serviceId) {
+        fields.push({ label: t.pickService, highlight: false });
+      }
+      if (!staffId) {
+        fields.push({ label: t.staffLabel, highlight: false });
+      }
+      if (!slot) {
+        fields.push({ label: t.pickTime, highlight: false });
+      }
+      if (!name.trim()) {
+        fields.push({ label: t.namePh, highlight: true });
+      }
+      if (!phone.trim()) {
+        fields.push({ label: t.phonePh, highlight: true });
+      }
+      setResult("");
+      setMissingFields(fields);
       setResultTone("error");
       scrollChatToBottomAfterPaint();
       return;
@@ -709,6 +734,7 @@ export default function ChatPage() {
     bookingRequestInFlightRef.current = true;
     setBusy(true);
     setResult("");
+    setMissingFields(null);
     setResultTone("neutral");
     setPhoneRetryMessage(null);
     try {
@@ -1309,7 +1335,10 @@ export default function ChatPage() {
                 <div className="grid max-w-[85%] gap-2 sm:max-w-full sm:grid-cols-2">
                   <input
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => {
+                      setName(event.target.value);
+                      setMissingFields(null);
+                    }}
                     placeholder={t.namePh}
                     className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm transition focus:border-violet-300"
                   />
@@ -1321,6 +1350,7 @@ export default function ChatPage() {
                       }
                       setPhone(event.target.value);
                       setPhoneRetryMessage(null);
+                      setMissingFields(null);
                     }}
                     placeholder={t.phonePh}
                     readOnly={maskPhoneForManagedRebook}
@@ -1358,6 +1388,13 @@ export default function ChatPage() {
           </>
         )}
 
+        {missingFields && missingFields.length > 0 && !showReschedule && (
+          <MissingFieldsBubble
+            prefix={t.missingPrefix}
+            fields={missingFields}
+            locale={locale}
+          />
+        )}
         {result && !showReschedule && (
           <Bubble
             role="assistant"
@@ -1430,6 +1467,33 @@ function ManageUpcomingSwitcher({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function MissingFieldsBubble({
+  prefix,
+  fields,
+  locale,
+}: {
+  prefix: string;
+  fields: { label: string; highlight: boolean }[];
+  locale: Locale;
+}) {
+  const conjunction = locale === "el" ? " και " : " and ";
+
+  return (
+    <div className="w-fit max-w-[85%] rounded-2xl border border-red-200 bg-[var(--error-soft)] px-4 py-2 text-sm text-[var(--error-text)]">
+      {prefix}{" "}
+      {fields.map((field, index) => (
+        <span key={`${field.label}-${index}`}>
+          {index > 0 && (index === fields.length - 1 ? conjunction : ", ")}
+          <span className={field.highlight ? "font-semibold text-red-700" : ""}>
+            {field.label}
+          </span>
+        </span>
+      ))}
+      .
     </div>
   );
 }
