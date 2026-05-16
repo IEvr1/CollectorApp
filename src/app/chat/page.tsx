@@ -248,6 +248,27 @@ export default function ChatPage() {
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
+  const scrollChatToBottomAfterPaint = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => scrollChatToBottom(behavior));
+      });
+    },
+    [scrollChatToBottom],
+  );
+
+  const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
+  const activeSalonTimezone = manage?.salonTimezone ?? salonTimezone;
+  const [identity, setIdentity] = useState<"pending" | "returning" | "new">("returning");
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  const [manageView, setManageView] = useState<"home" | "reschedule">("home");
+  const [rebookActive, setRebookActive] = useState(false);
+  const [manageSlots, setManageSlots] = useState<string[]>([]);
+  const [manageSlotLabels, setManageSlotLabels] = useState<Record<string, string>>({});
+  const [manageSlot, setManageSlot] = useState("");
+  const [manageBusy, setManageBusy] = useState(false);
+  const [focusBusy, setFocusBusy] = useState(false);
+
   const scrollChatToActiveStep = useCallback(
     (behavior: ScrollBehavior = "auto") => {
       const onBookingDateStep = Boolean(staffId) && !slot;
@@ -266,15 +287,6 @@ export default function ChatPage() {
     [staffId, slot, manageView, manageSlot, scrollChatToRef, scrollChatToBottom],
   );
 
-  const scrollChatToBottomAfterPaint = useCallback(
-    (behavior: ScrollBehavior = "smooth") => {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => scrollChatToBottom(behavior));
-      });
-    },
-    [scrollChatToBottom],
-  );
-
   const scrollChatToActiveStepAfterPaint = useCallback(
     (behavior: ScrollBehavior = "smooth") => {
       window.requestAnimationFrame(() => {
@@ -283,18 +295,6 @@ export default function ChatPage() {
     },
     [scrollChatToActiveStep],
   );
-
-  const [manage, setManage] = useState<ManageSummary | null | undefined>(undefined);
-  const activeSalonTimezone = manage?.salonTimezone ?? salonTimezone;
-  const [identity, setIdentity] = useState<"pending" | "returning" | "new">("returning");
-  const [identityConfirmed, setIdentityConfirmed] = useState(false);
-  const [manageView, setManageView] = useState<"home" | "reschedule">("home");
-  const [rebookActive, setRebookActive] = useState(false);
-  const [manageSlots, setManageSlots] = useState<string[]>([]);
-  const [manageSlotLabels, setManageSlotLabels] = useState<Record<string, string>>({});
-  const [manageSlot, setManageSlot] = useState("");
-  const [manageBusy, setManageBusy] = useState(false);
-  const [focusBusy, setFocusBusy] = useState(false);
 
   const loadManageSummary = useCallback(async () => {
     const response = await fetch(`/api/bookings/manage/summary?lang=${locale}`, {
