@@ -53,6 +53,9 @@ function slotLabelsFromOptions(options: SlotOption[]): Record<string, string> {
   return labels;
 }
 
+const datePickerInputClassName =
+  "w-full rounded-xl border border-zinc-300/90 bg-zinc-100 px-3 py-2.5 text-sm text-zinc-900 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] transition focus:border-violet-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(139,92,246,0.15)]";
+
 export default function ChatPage() {
   const [locale, setLocale] = useState<Locale>(() => {
     if (typeof window === "undefined") {
@@ -1006,7 +1009,7 @@ export default function ChatPage() {
                   setManageSlot("");
                 }}
                 type="date"
-                className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm transition focus:border-violet-300"
+                className={datePickerInputClassName}
               />
             </div>
             <Bubble role="assistant" text={t.slots} />
@@ -1016,9 +1019,7 @@ export default function ChatPage() {
               <div className="flex flex-col gap-4">
                 {morningSlots.length > 0 && (
                   <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      {t.morning}
-                    </h3>
+                    <TimeSectionHeading variant="morning">{t.morning}</TimeSectionHeading>
                     <CardGrid>
                       {morningSlots.map((slotIso) => (
                         <button
@@ -1039,9 +1040,7 @@ export default function ChatPage() {
                 )}
                 {afternoonSlots.length > 0 && (
                   <section>
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      {t.afternoon}
-                    </h3>
+                    <TimeSectionHeading variant="afternoon">{t.afternoon}</TimeSectionHeading>
                     <CardGrid>
                       {afternoonSlots.map((slotIso) => (
                         <button
@@ -1199,7 +1198,7 @@ export default function ChatPage() {
                       setSlot("");
                     }}
                     type="date"
-                    className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm transition focus:border-violet-300"
+                    className={datePickerInputClassName}
                   />
                 </div>
                 <Bubble role="assistant" text={t.slots} />
@@ -1211,9 +1210,7 @@ export default function ChatPage() {
                   <div className="flex flex-col gap-4">
                     {morningSlots.length > 0 && (
                       <section>
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                          {t.morning}
-                        </h3>
+                        <TimeSectionHeading variant="morning">{t.morning}</TimeSectionHeading>
                         <CardGrid>
                           {morningSlots.map((slotIso) => (
                             <button
@@ -1234,9 +1231,7 @@ export default function ChatPage() {
                     )}
                     {afternoonSlots.length > 0 && (
                       <section>
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                          {t.afternoon}
-                        </h3>
+                        <TimeSectionHeading variant="afternoon">{t.afternoon}</TimeSectionHeading>
                         <CardGrid>
                           {afternoonSlots.map((slotIso) => (
                             <button
@@ -1420,6 +1415,29 @@ function Bubble({
       }`}
     >
       {text}
+    </div>
+  );
+}
+
+function TimeSectionHeading({
+  variant,
+  children,
+}: {
+  variant: "morning" | "afternoon";
+  children: React.ReactNode;
+}) {
+  const pillClass =
+    variant === "morning"
+      ? "border-amber-200/90 bg-gradient-to-b from-amber-50 to-amber-100/90 text-amber-950 shadow-sm shadow-amber-900/5"
+      : "border-sky-200/90 bg-gradient-to-b from-sky-50 to-sky-100/80 text-sky-950 shadow-sm shadow-sky-900/5";
+
+  return (
+    <div className="mb-3 flex justify-center px-1">
+      <span
+        className={`inline-flex max-w-[min(100%,18rem)] items-center justify-center rounded-full border px-5 py-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] ${pillClass}`}
+      >
+        {children}
+      </span>
     </div>
   );
 }
