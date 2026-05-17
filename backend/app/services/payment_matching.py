@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Literal
 
 from supabase import Client
 
@@ -8,28 +9,47 @@ from app.services.notifications import NotificationService, format_amount
 from app.services.payment_reference import month_from_yyyymm, parse_reference
 
 
+PaymentMethod = Literal["bank_transfer", "payment_link"]
+
+
 class PaymentMatchingService:
     def __init__(self, db: Client):
         self.db = db
         self.notifications = NotificationService(db)
 
+    def _find_duplicate(self, external_id: str, merchant_order_id: str | None) -> dict | None:
+        q = self.db.table("payments").select("id")
+        if merchant_order_id and merchant_order_id != external_id:
+            r = (
+                q.or_(
+                    f"revolut_transaction_id.eq.{external_id},"
+                    f"revolut_transaction_id.eq.{merchant_order_id},"
+                    f"merchant_order_id.eq.{merchant_order_id}"
+                )
+                .maybe_single()
+                .execute()
+            )
+        else:
+            r = q.eq("revolut_transaction_id", external_id).maybe_single().execute()
+        return r.data
+
     def process_payment(
         self,
         *,
         amount: Decimal,
-        virtual_iban: str | None,
         reference: str,
-        revolut_transaction_id: str,
+        external_id: str,
+        payment_method: PaymentMethod = "bank_transfer",
+        virtual_iban: str | None = None,
+        merchant_order_id: str | None = None,
     ) -> dict:
-        existing = (
-            self.db.table("payments")
-            .select("id")
-            .eq("revolut_transaction_id", revolut_transaction_id)
-            .maybe_single()
-            .execute()
+        merchant_order_id = merchant_order_id or (
+            external_id if payment_method == "payment_link" else None
         )
-        if existing.data:
-            return {"status": "duplicate", "payment_id": existing.data["id"]}
+
+        existing = self._find_duplicate(external_id, merchant_order_id)
+        if existing:
+            return {"status": "duplicate", "payment_id": existing["id"]}
 
         parsed = parse_reference(reference)
         if not parsed:
@@ -39,7 +59,9 @@ class PaymentMatchingService:
                     {
                         "amount": float(amount),
                         "payment_reference": reference,
-                        "revolut_transaction_id": revolut_transaction_id,
+                        "revolut_transaction_id": external_id,
+                        "merchant_order_id": merchant_order_id,
+                        "payment_method": payment_method,
                         "matched": False,
                     }
                 )
@@ -107,12 +129,19 @@ class PaymentMatchingService:
                     "ledger_id": ledger_id,
                     "amount": float(amount),
                     "payment_reference": reference,
-                    "revolut_transaction_id": revolut_transaction_id,
+                    "revolut_transaction_id": external_id,
+                    "merchant_order_id": merchant_order_id,
+                    "payment_method": payment_method,
                     "matched": ledger_id is not None,
                 }
             )
             .execute()
         ).data[0]
+
+        if payment_method == "payment_link" and merchant_order_id:
+            from app.services.payment_link import PaymentLinkService
+
+            PaymentLinkService(self.db).mark_link_completed(merchant_order_id, "completed")
 
         if unit and ledger.data:
             building = (

@@ -10,10 +10,6 @@ from app.services.phone import normalize_cyprus_phone
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "sms"
 
 
-def format_amount(amount: Decimal | float) -> str:
-    return f"{float(amount):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
 def _load_template(key: str, locale: str) -> str:
     path = TEMPLATES_DIR / f"{key}_{locale}.txt"
     if not path.exists():

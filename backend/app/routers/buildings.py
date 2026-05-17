@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.deps import OperatorDep, SupabaseDep
 from app.models.schemas import BuildingCreate, BuildingDashboard, BuildingResponse
-from app.services.expense_distribution import first_of_month
+from app.services.dates import first_of_month
 
 router = APIRouter(prefix="/buildings", tags=["buildings"])
 
@@ -120,7 +120,7 @@ def building_ledger(
 def building_payments(building_id: UUID, db: SupabaseDep, _: OperatorDep):
     rows = (
         db.table("payments")
-        .select("*, units(unit_number)")
+        .select("id, amount, received_at, matched, payment_method, units(unit_number)")
         .eq("building_id", str(building_id))
         .order("received_at", desc=True)
         .limit(100)

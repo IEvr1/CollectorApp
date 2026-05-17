@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Copy, MessageSquare, QrCode } from "lucide-react";
+import { X, Copy, MessageSquare, QrCode, Link2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import type { UnitWithLedger } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -10,6 +10,12 @@ function formatEuro(n: number) {
   return new Intl.NumberFormat("el-CY", { style: "currency", currency: "EUR" }).format(n);
 }
 
+type PaymentLinkData = {
+  checkout_url: string;
+  reference: string;
+  amount: number;
+};
+
 export function UnitDrawer({
   unit,
   onClose,
@@ -19,6 +25,8 @@ export function UnitDrawer({
   onClose: () => void;
 }) {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [paymentLink, setPaymentLink] = useState<PaymentLinkData | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
 
   const ref = unit.ledger?.payment_reference ?? "";
 
@@ -51,10 +59,32 @@ export function UnitDrawer({
     }
   };
 
+  const loadPaymentLink = async (open = false) => {
+    setLinkLoading(true);
+    try {
+      const data = await api.post<PaymentLinkData>(`/units/${unit.id}/payment-link`, {});
+      setPaymentLink(data);
+      if (open) {
+        window.open(data.checkout_url, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("error"));
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const copyPaymentLink = () => {
+    if (paymentLink?.checkout_url) {
+      navigator.clipboard.writeText(paymentLink.checkout_url);
+      toast.success(t("copyPaymentLink"));
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
       <div className="h-full w-full max-w-md overflow-y-auto bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">#{unit.unit_number}</h2>
             {unit.owner_name && <p className="text-sm text-slate-500">{unit.owner_name}</p>}
@@ -73,8 +103,15 @@ export function UnitDrawer({
 
           {ref && (
             <div className="rounded-lg bg-slate-50 p-3 text-sm">
-              <p className="text-slate-500">Αναφορά πληρωμής</p>
+              <p className="text-slate-500">Αναφορά πληρωμής (τράπεζα)</p>
               <p className="mt-1 break-all font-mono text-xs">{ref}</p>
+            </div>
+          )}
+
+          {paymentLink && (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm">
+              <p className="font-medium text-indigo-900">{t("payOnline")}</p>
+              <p className="mt-1 break-all text-xs text-indigo-800">{paymentLink.checkout_url}</p>
             </div>
           )}
 
@@ -94,6 +131,24 @@ export function UnitDrawer({
             >
               <MessageSquare className="h-4 w-4" />
               {t("sendReminder")}
+            </button>
+            <button
+              type="button"
+              onClick={() => loadPaymentLink(true)}
+              disabled={linkLoading || unit.balance <= 0}
+              className="flex items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 py-2.5 text-sm text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              <ExternalLink className="h-4 w-4" />
+              {linkLoading ? t("loading") : t("payOnline")}
+            </button>
+            <button
+              type="button"
+              onClick={() => (paymentLink ? copyPaymentLink() : loadPaymentLink(false))}
+              disabled={linkLoading || unit.balance <= 0}
+              className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Link2 className="h-4 w-4" />
+              {t("copyPaymentLink")}
             </button>
             <button
               type="button"

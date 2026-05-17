@@ -6,7 +6,7 @@ from uuid import UUID
 import qrcode
 from supabase import Client
 
-from app.services.expense_distribution import first_of_month
+from app.services.dates import first_of_month
 from app.services.payment_reference import build_reference
 
 

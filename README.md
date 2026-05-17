@@ -48,7 +48,9 @@ uvicorn app.main:app --reload --port 8000
 Required env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `FRONTEND_URL`.
 
 Optional for notifications: `TWILIO_*`, `SENDGRID_*`.  
-Optional for webhooks: `REVOLUT_WEBHOOK_SECRET`.
+Optional for payments:
+- **Bank transfer:** `REVOLUT_WEBHOOK_SECRET` (Business API webhooks)
+- **Payment links:** `REVOLUT_MERCHANT_API_KEY`, `REVOLUT_MERCHANT_WEBHOOK_SECRET` (Merchant API)
 
 ### 3. Frontend
 
@@ -81,11 +83,21 @@ Owners pay with reference:
 
 Example: `a1b2c3d4-....-e5f6....-202605`
 
-## Revolut webhook
+## Dual payment options
 
-Point Revolut Business webhooks to:
+Owners can pay monthly charges in two ways:
 
-`POST https://your-api.railway.app/webhooks/revolut`
+1. **Bank transfer** — IBAN + payment reference (or QR). Revolut Business webhook matches incoming transfers.
+2. **Payment link** — Revolut hosted checkout (Merchant API). Link is included in charge notices and available from the unit drawer.
+
+## Revolut webhooks
+
+| Product | URL |
+|---------|-----|
+| Business API (bank transfers) | `POST https://your-api.railway.app/webhooks/revolut` |
+| Merchant API (payment links) | `POST https://your-api.railway.app/webhooks/revolut-merchant` |
+
+Subscribe Merchant webhooks to `ORDER_COMPLETED` (and optionally `ORDER_AUTHORISED`).
 
 ## Railway deployment
 
@@ -98,7 +110,8 @@ Deploy `backend/` and `frontend/` as separate services. Set all env vars from `.
 - Buildings & units CRUD
 - Expense distribution with preview wizard
 - Ledger per unit/month
-- Revolut webhook payment matching
+- Dual payments: bank transfer + Revolut payment links
+- Revolut webhooks (Business + Merchant)
 - Twilio SMS + SendGrid email notifications
 - Realtime dashboard updates
 - QR payment codes per unit
