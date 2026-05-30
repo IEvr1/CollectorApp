@@ -1,8 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/app/config.py → repo root (so uvicorn cwd=backend still loads root .env)
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(str(_ROOT / ".env"), str(_ROOT / "backend" / ".env")),
+        extra="ignore",
+    )
 
     supabase_url: str = ""
     supabase_service_role_key: str = ""
