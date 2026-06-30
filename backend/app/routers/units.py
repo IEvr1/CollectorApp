@@ -6,10 +6,8 @@ from fastapi.responses import Response
 import base64
 
 from app.deps import OperatorDep, SupabaseDep
-from app.models.schemas import PaymentLinkResponse, UnitCreate, UnitResponse
-from app.services.payment_link import PaymentLinkService
+from app.models.schemas import UnitCreate, UnitResponse
 from app.services.qr_payment import QRPaymentService
-from app.services.revolut_merchant import RevolutMerchantError
 
 router = APIRouter(tags=["units"])
 
@@ -65,41 +63,3 @@ def unit_payment_qr_image(unit_id: UUID, db: SupabaseDep, _: OperatorDep, month:
     data = QRPaymentService(db).get_payment_qr(str(unit_id), month)
     png = base64.b64decode(data["qr_png_base64"])
     return Response(content=png, media_type="image/png")
-
-
-@router.post("/units/{unit_id}/payment-link", response_model=PaymentLinkResponse)
-def create_payment_link(
-    unit_id: UUID,
-    db: SupabaseDep,
-    _: OperatorDep,
-    month: str | None = None,
-    force_new: bool = False,
-):
-    try:
-        data = PaymentLinkService(db).create_for_unit_sync(str(unit_id), month, force_new=force_new)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RevolutMerchantError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return data
-
-
-@router.get("/units/{unit_id}/payment-link", response_model=PaymentLinkResponse)
-def get_payment_link(unit_id: UUID, db: SupabaseDep, _: OperatorDep, month: str | None = None):
-    svc = PaymentLinkService(db)
-    existing = svc.get_active_link(str(unit_id), month)
-    if existing:
-        return {
-            "checkout_url": existing["checkout_url"],
-            "order_id": existing["revolut_order_id"],
-            "reference": existing["merchant_reference"],
-            "amount": float(existing["amount"]),
-            "currency": existing["currency"],
-            "reused": True,
-        }
-    try:
-        return svc.create_for_unit_sync(str(unit_id), month)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RevolutMerchantError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc

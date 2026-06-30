@@ -1,3 +1,2 @@
 Υπενθύμιση: Η μηνιαία εισφορά σας €{amount} για {month} εκκρεμεί.
 Τραπεζική κατάθεση — IBAN: {iban} | Αναφ.: {reference}
-{payment_link_line}

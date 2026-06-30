@@ -5,7 +5,6 @@ import { getAccessToken } from "@/lib/supabase";
 import { HomePage } from "@/pages/HomePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { BuildingPage } from "@/pages/BuildingPage";
-import { PaymentSuccessPage } from "@/pages/PaymentSuccessPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getAccessToken()) {
@@ -20,7 +19,6 @@ export default function App() {
       <Toaster position="top-center" richColors />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/payment/success" element={<PaymentSuccessPage />} />
         <Route
           element={
             <RequireAuth>

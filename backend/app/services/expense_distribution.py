@@ -1,17 +1,13 @@
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from supabase import Client
 
+from app.services.dates import first_of_month
 from app.services.notifications import NotificationService, format_amount
 from app.services.payment_instructions import build_charge_context
-from app.services.payment_link import PaymentLinkService
 from app.services.payment_reference import build_reference
-from app.services.revolut_merchant import RevolutMerchantError
-
-
-from app.services.dates import first_of_month
 
 
 def default_due_date(month: date) -> date:
@@ -117,14 +113,6 @@ class ExpenseDistributionService:
             ref = ledger.get("payment_reference") or build_reference(
                 building["id"], unit["id"], month
             )
-            payment_link: str | None = None
-            link_svc = PaymentLinkService(self.db)
-            if link_svc.merchant.configured:
-                try:
-                    link_data = link_svc.create_for_unit_sync(unit["id"], month.isoformat())
-                    payment_link = link_data.get("checkout_url")
-                except (RevolutMerchantError, ValueError):
-                    payment_link = None
 
             locale = unit.get("preferred_locale") or "el"
             charge_ctx = build_charge_context(
@@ -132,7 +120,6 @@ class ExpenseDistributionService:
                 month=month_label,
                 reference=ref,
                 iban=building.get("virtual_iban") or "",
-                payment_link=payment_link,
                 locale=locale,
             )
             charge_ctx["subject"] = f"Εισφορά {month_label} — {building.get('name', '')}"

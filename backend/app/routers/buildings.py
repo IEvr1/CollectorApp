@@ -4,9 +4,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import settings
 from app.deps import OperatorDep, SupabaseDep
-from app.models.schemas import BuildingCreate, BuildingDashboard, BuildingResponse
+from app.models.schemas import (
+    BuildingCreate,
+    BuildingDashboard,
+    BuildingPayoutConfigUpdate,
+    BuildingPayoutSummary,
+    BuildingResponse,
+    PayoutBatchResponse,
+)
 from app.services.dates import first_of_month
+from app.services.payout import PayoutService
 
 router = APIRouter(prefix="/buildings", tags=["buildings"])
 
@@ -120,10 +129,79 @@ def building_ledger(
 def building_payments(building_id: UUID, db: SupabaseDep, _: OperatorDep):
     rows = (
         db.table("payments")
-        .select("id, amount, received_at, matched, payment_method, units(unit_number)")
+        .select(
+            "id, amount, received_at, matched, payment_method, collected_at, "
+            "paid_out_at, payout_batch_id, units(unit_number)"
+        )
         .eq("building_id", str(building_id))
         .order("received_at", desc=True)
         .limit(100)
         .execute()
     )
     return rows.data or []
+
+
+@router.patch("/{building_id}/payout-config", response_model=BuildingResponse)
+def update_payout_config(
+    building_id: UUID,
+    body: BuildingPayoutConfigUpdate,
+    db: SupabaseDep,
+    _: OperatorDep,
+):
+    row = db.table("buildings").select("id").eq("id", str(building_id)).maybe_single().execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    updated = (
+        db.table("buildings").update(updates).eq("id", str(building_id)).execute()
+    )
+    return updated.data[0]
+
+
+@router.get("/{building_id}/payouts", response_model=list[PayoutBatchResponse])
+def building_payouts(building_id: UUID, db: SupabaseDep, _: OperatorDep):
+    row = db.table("buildings").select("id").eq("id", str(building_id)).maybe_single().execute()
+    if not row.data:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    rows = (
+        db.table("payout_batches")
+        .select("*")
+        .eq("building_id", str(building_id))
+        .order("scheduled_for", desc=True)
+        .limit(52)
+        .execute()
+    )
+    return rows.data or []
+
+
+@router.get("/{building_id}/payout-summary", response_model=BuildingPayoutSummary)
+def building_payout_summary(building_id: UUID, db: SupabaseDep, _: OperatorDep):
+    building = db.table("buildings").select("*").eq("id", str(building_id)).maybe_single().execute()
+    if not building.data:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    service = PayoutService(db)
+    pending = service.pending_amount(str(building_id))
+
+    last = (
+        db.table("payout_batches")
+        .select("*")
+        .eq("building_id", str(building_id))
+        .eq("status", "completed")
+        .order("scheduled_for", desc=True)
+        .limit(1)
+        .maybe_single()
+        .execute()
+    )
+
+    return BuildingPayoutSummary(
+        pending_amount=pending,
+        minimum_payout=settings.payout_min_amount,
+        payout_enabled=bool(building.data.get("payout_enabled")),
+        last_payout=last.data,
+    )
