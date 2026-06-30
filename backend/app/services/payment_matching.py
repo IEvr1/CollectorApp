@@ -107,19 +107,21 @@ class PaymentMatchingService:
                 due_date = date.fromisoformat(due_date)
             status = compute_status(amount_due, amount_paid, due_date)
             paid_at = datetime.now(timezone.utc).isoformat()
+            ledger_update: dict = {
+                "amount_paid": float(amount_paid),
+                "status": status,
+                "payment_date": paid_at if status == "paid" else ledger.data.get("payment_date"),
+                "payment_reference": reference,
+            }
+            if not ledger.data.get("collected_at"):
+                ledger_update["collected_at"] = paid_at
 
-            self.db.table("ledger").update(
-                {
-                    "amount_paid": float(amount_paid),
-                    "status": status,
-                    "payment_date": paid_at if status == "paid" else ledger.data.get("payment_date"),
-                    "payment_reference": reference,
-                }
-            ).eq("id", ledger.data["id"]).execute()
+            self.db.table("ledger").update(ledger_update).eq("id", ledger.data["id"]).execute()
             ledger_id = ledger.data["id"]
         else:
             ledger_id = None
 
+        collected_at = datetime.now(timezone.utc).isoformat() if ledger_id else None
         payment = (
             self.db.table("payments")
             .insert(
@@ -133,6 +135,7 @@ class PaymentMatchingService:
                     "merchant_order_id": merchant_order_id,
                     "payment_method": payment_method,
                     "matched": ledger_id is not None,
+                    "collected_at": collected_at,
                 }
             )
             .execute()

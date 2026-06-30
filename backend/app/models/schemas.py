@@ -24,6 +24,40 @@ class BuildingResponse(BaseModel):
     reserve_fund_target: Decimal | None = None
     reserve_fund_current: Decimal | None = None
     created_at: datetime | None = None
+    payout_enabled: bool = False
+    revolut_counterparty_id: str | None = None
+    revolut_counterparty_account_id: str | None = None
+    payout_iban: str | None = None
+    payout_recipient_name: str | None = None
+
+
+class BuildingPayoutConfigUpdate(BaseModel):
+    payout_enabled: bool | None = None
+    revolut_counterparty_id: str | None = None
+    revolut_counterparty_account_id: str | None = None
+    payout_iban: str | None = None
+    payout_recipient_name: str | None = None
+
+
+class PayoutBatchResponse(BaseModel):
+    id: UUID
+    building_id: UUID
+    scheduled_for: date
+    status: str
+    total_amount: Decimal
+    payment_count: int
+    reference: str | None = None
+    revolut_transaction_id: str | None = None
+    error_message: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class BuildingPayoutSummary(BaseModel):
+    pending_amount: Decimal
+    minimum_payout: Decimal
+    payout_enabled: bool
+    last_payout: PayoutBatchResponse | None = None
 
 
 class UnitCreate(BaseModel):
@@ -81,6 +115,9 @@ class LedgerEntry(BaseModel):
     due_date: date | None = None
     status: str
     payment_reference: str | None = None
+    collected_at: datetime | None = None
+    paid_out_at: datetime | None = None
+    payout_batch_id: UUID | None = None
 
 
 class BuildingDashboard(BaseModel):
