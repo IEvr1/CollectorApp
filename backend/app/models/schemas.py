@@ -133,13 +133,3 @@ class NotificationSend(BaseModel):
     unit_id: UUID
     template_key: str = "charge_notice"
     channels: list[Literal["sms", "email"]] = ["sms", "email"]
-
-
-class PaymentLinkResponse(BaseModel):
-    checkout_url: str
-    order_id: str
-    reference: str
-    amount: float
-    currency: str = "EUR"
-    payment_link_id: str | None = None
-    reused: bool = False

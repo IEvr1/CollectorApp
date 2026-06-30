@@ -7,9 +7,7 @@ from app.models.schemas import NotificationSend
 from app.services.dates import first_of_month
 from app.services.notifications import NotificationService, format_amount
 from app.services.payment_instructions import build_charge_context
-from app.services.payment_link import PaymentLinkService
 from app.services.payment_reference import build_reference
-from app.services.revolut_merchant import RevolutMerchantError
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -39,16 +37,6 @@ def send_notification(body: NotificationSend, db: SupabaseDep, _: OperatorDep):
     amount = ledger.data.get("balance") if ledger.data else 0
 
     building = unit.data.get("buildings") or {}
-    payment_link: str | None = None
-    if body.template_key == "charge_notice":
-        link_svc = PaymentLinkService(db)
-        if link_svc.merchant.configured:
-            try:
-                link_data = link_svc.create_for_unit_sync(str(body.unit_id), month.isoformat())
-                payment_link = link_data.get("checkout_url")
-            except (RevolutMerchantError, ValueError):
-                payment_link = None
-
     locale = unit.data.get("preferred_locale") or "el"
     if body.template_key == "charge_notice":
         context = build_charge_context(
@@ -56,7 +44,6 @@ def send_notification(body: NotificationSend, db: SupabaseDep, _: OperatorDep):
             month=month.strftime("%m/%Y"),
             reference=ref,
             iban=building.get("virtual_iban") or "",
-            payment_link=payment_link,
             locale=locale,
         )
     else:

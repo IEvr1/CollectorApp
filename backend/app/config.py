@@ -23,12 +23,6 @@ class Settings(BaseSettings):
     revolut_business_base_url: str = "https://sandbox-b2b.revolut.com"
     revolut_source_account_id: str = ""
 
-    revolut_merchant_api_key: str = ""
-    revolut_merchant_webhook_secret: str = ""
-    revolut_merchant_api_version: str = "2024-09-01"
-    revolut_merchant_base_url: str = "https://sandbox-merchant.revolut.com"
-    revolut_payment_redirect_url: str = ""
-
     sendgrid_api_key: str = ""
     sendgrid_from_email: str = "noreply@example.com"
 
