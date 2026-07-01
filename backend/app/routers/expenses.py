@@ -10,11 +10,11 @@ from app.services.expense_distribution import ExpenseDistributionService
 router = APIRouter(tags=["expenses"])
 
 
-@router.post("/buildings/{building_id}/expenses", response_model=ExpenseResponse)
+@router.post("/{building_id}/expenses", response_model=ExpenseResponse)
 def create_expense(building_id: UUID, body: ExpenseCreate, db: DbDep, _: OperatorDep):
     exists = db.execute("SELECT id FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not exists:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
 
     row = db.execute(
         """
@@ -40,7 +40,7 @@ def create_expense(building_id: UUID, body: ExpenseCreate, db: DbDep, _: Operato
     return expense
 
 
-@router.get("/buildings/{building_id}/expenses", response_model=list[ExpenseResponse])
+@router.get("/{building_id}/expenses", response_model=list[ExpenseResponse])
 def list_expenses(building_id: UUID, db: DbDep, _: OperatorDep):
     rows = db.execute(
         "SELECT * FROM expenses WHERE building_id = %s ORDER BY date DESC",

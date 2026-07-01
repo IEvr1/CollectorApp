@@ -25,9 +25,9 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Cyprus Property Management API",
-    version="0.1.0",
-    description="Building management automation for Cyprus",
+    title="Collection Platform API",
+    version="0.2.0",
+    description="Collector intermediary for groups: charges, bank transfers, weekly committee payouts",
     lifespan=lifespan,
 )
 
@@ -41,9 +41,13 @@ app.add_middleware(
 
 api = APIRouter(prefix="/api")
 api.include_router(auth.router)
-api.include_router(buildings.router)
-api.include_router(units.router)
-api.include_router(expenses.router)
+
+api.include_router(units.unit_router)
+for prefix in ("/buildings", "/groups"):
+    api.include_router(buildings.router, prefix=prefix)
+    api.include_router(units.group_router, prefix=prefix)
+    api.include_router(expenses.router, prefix=prefix)
+
 api.include_router(webhooks.router)
 api.include_router(notifications.router)
 api.include_router(revolut_oauth.router)

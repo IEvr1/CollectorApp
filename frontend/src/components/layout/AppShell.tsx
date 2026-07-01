@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
-import { Building2, LogOut, Globe } from "lucide-react";
+import { Users, LogOut, Globe } from "lucide-react";
 import { clearSession } from "@/lib/auth";
 import { getLocale, setLocale, t, type Locale } from "@/lib/i18n";
 
@@ -23,7 +23,7 @@ export function AppShell() {
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-slate-900">
-            <Building2 className="h-6 w-6 text-slate-700" />
+            <Users className="h-6 w-6 text-slate-700" />
             {t("appTitle")}
           </Link>
           <nav className="flex items-center gap-2">

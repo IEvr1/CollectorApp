@@ -3,15 +3,25 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
+
+
+GroupType = Literal["building", "school", "association", "other"]
+SplitMethod = Literal["by_area", "equal", "custom_weight"]
+ExpenseCategory = Literal[
+    "maintenance", "utilities", "dues", "event", "insurance", "other"
+]
 
 
 class BuildingCreate(BaseModel):
     name: str
     address: str | None = None
     virtual_iban: str | None = None
-    monthly_budget: Decimal = Decimal("0")
-    reserve_fund_target: Decimal = Decimal("0")
+    group_type: GroupType = "building"
+    split_method: SplitMethod = "by_area"
+    payout_enabled: bool = False
+    payout_iban: str | None = None
+    payout_recipient_name: str | None = None
 
 
 class BuildingResponse(BaseModel):
@@ -19,10 +29,9 @@ class BuildingResponse(BaseModel):
     name: str
     address: str | None = None
     virtual_iban: str | None = None
+    group_type: GroupType = "building"
+    split_method: SplitMethod = "by_area"
     total_area_m2: Decimal | None = None
-    monthly_budget: Decimal | None = None
-    reserve_fund_target: Decimal | None = None
-    reserve_fund_current: Decimal | None = None
     created_at: datetime | None = None
     payout_enabled: bool = False
     revolut_counterparty_id: str | None = None
@@ -57,6 +66,7 @@ class BuildingPayoutSummary(BaseModel):
     pending_amount: Decimal
     minimum_payout: Decimal
     payout_enabled: bool
+    next_payout_label: str = "Friday"
     last_payout: PayoutBatchResponse | None = None
 
 
@@ -65,9 +75,16 @@ class UnitCreate(BaseModel):
     owner_name: str | None = None
     email: EmailStr | None = None
     phone: str | None = None
-    area_m2: Decimal = Field(gt=0)
+    area_m2: Decimal | None = None
+    weight: Decimal = Field(default=Decimal("1"), gt=0)
     floor: int | None = None
     preferred_locale: Literal["el", "en"] = "el"
+
+    @model_validator(mode="after")
+    def validate_area_for_building_groups(self) -> "UnitCreate":
+        if self.area_m2 is not None and self.area_m2 <= 0:
+            raise ValueError("area_m2 must be positive when provided")
+        return self
 
 
 class UnitResponse(BaseModel):
@@ -77,7 +94,8 @@ class UnitResponse(BaseModel):
     owner_name: str | None = None
     email: str | None = None
     phone: str | None = None
-    area_m2: Decimal
+    area_m2: Decimal | None = None
+    weight: Decimal | None = Decimal("1")
     share_percentage: Decimal | None = None
     floor: int | None = None
     preferred_locale: str | None = "el"
@@ -85,9 +103,7 @@ class UnitResponse(BaseModel):
 
 class ExpenseCreate(BaseModel):
     date: date
-    category: Literal[
-        "electricity", "water", "elevator", "cleaning", "insurance", "reserve", "other"
-    ]
+    category: ExpenseCategory
     vendor: str | None = None
     amount: Decimal = Field(gt=0)
 
@@ -100,7 +116,6 @@ class ExpenseResponse(BaseModel):
     vendor: str | None = None
     amount: Decimal
     approved: bool = True
-    extracted_by_ai: bool = False
 
 
 class LedgerEntry(BaseModel):
@@ -124,6 +139,11 @@ class BuildingDashboard(BaseModel):
     building: BuildingResponse
     collected_this_month: Decimal
     outstanding: Decimal
+    pending_payout: Decimal = Decimal("0")
+    payout_enabled: bool = False
+    next_payout_label: str = "Friday"
+    last_payout_amount: Decimal | None = None
+    last_payout_date: date | None = None
     units_paid: int
     units_total: int
     units: list[dict]
@@ -133,3 +153,14 @@ class NotificationSend(BaseModel):
     unit_id: UUID
     template_key: str = "charge_notice"
     channels: list[Literal["sms", "email"]] = ["sms", "email"]
+
+
+class PayoutRunResponse(BaseModel):
+    status: str
+    dry_run: bool = False
+    total_amount: float | None = None
+    payment_count: int | None = None
+    reference: str | None = None
+    batch_id: str | None = None
+    reason: str | None = None
+    error: str | None = None

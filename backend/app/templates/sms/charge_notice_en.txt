@@ -1,2 +1,2 @@
-Reminder: Your monthly contribution of €{amount} for {month} is outstanding.
+Reminder: Your contribution of €{amount} for {month} is outstanding.
 Bank transfer — IBAN: {iban} | Ref: {reference}

@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     database_url: str = ""
     jwt_secret: str = ""
 
-    anthropic_api_key: str = ""
     revolut_api_key: str = ""
     revolut_webhook_secret: str = ""
     revolut_business_base_url: str = "https://sandbox-b2b.revolut.com"

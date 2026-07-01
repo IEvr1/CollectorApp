@@ -15,6 +15,7 @@ export function UnitDrawer({
   onClose,
 }: {
   unit: UnitWithLedger;
+  groupId?: string;
   buildingId?: string;
   onClose: () => void;
 }) {

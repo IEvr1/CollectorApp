@@ -24,6 +24,33 @@ def compute_status(amount_due: Decimal, amount_paid: Decimal, due_date: date | N
     return "pending"
 
 
+def compute_member_charge(
+    *,
+    amount: Decimal,
+    unit: dict,
+    split_method: str,
+    total_area: Decimal,
+    member_count: int,
+    total_weight: Decimal,
+) -> Decimal | None:
+    if split_method == "equal":
+        if member_count <= 0:
+            return None
+        return (amount / Decimal(member_count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    if split_method == "custom_weight":
+        if total_weight <= 0:
+            return None
+        weight = Decimal(str(unit.get("weight") or 1))
+        return (amount * weight / total_weight).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    area = unit.get("area_m2")
+    if area is None or total_area <= 0:
+        return None
+    share = Decimal(str(area)) / total_area
+    return (amount * share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 class ExpenseDistributionService:
     def __init__(self, db: psycopg.Connection):
         self.db = db
@@ -50,9 +77,18 @@ class ExpenseDistributionService:
         ).fetchall()
         units = [serialize_row(u) for u in units]
 
+        if not units:
+            raise ValueError("Group has no members configured")
+
+        split_method = building.get("split_method") or "by_area"
         total_area = Decimal(str(building.get("total_area_m2") or 0))
-        if total_area <= 0:
-            raise ValueError("Building has no unit areas configured")
+        total_weight = sum(Decimal(str(u.get("weight") or 1)) for u in units)
+        member_count = len(units)
+
+        if split_method == "by_area" and total_area <= 0:
+            raise ValueError("Group has no member areas configured for area-based split")
+        if split_method == "custom_weight" and total_weight <= 0:
+            raise ValueError("Group has no member weights configured")
 
         amount = Decimal(str(expense["amount"]))
         month = first_of_month(
@@ -64,9 +100,15 @@ class ExpenseDistributionService:
         updated = []
 
         for unit in units:
-            share = Decimal(str(unit["area_m2"])) / total_area
-            charge = (amount * share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            if charge <= 0:
+            charge = compute_member_charge(
+                amount=amount,
+                unit=unit,
+                split_method=split_method,
+                total_area=total_area,
+                member_count=member_count,
+                total_weight=total_weight,
+            )
+            if charge is None or charge <= 0:
                 continue
 
             existing = self.db.execute(

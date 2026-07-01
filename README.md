@@ -1,6 +1,23 @@
-# Cyprus Property Management Platform
+# Collection Platform
 
-Automation platform for Cyprus building management companies: expense distribution, Revolut payment matching, Twilio SMS + SendGrid email, operator dashboard with ledger updates.
+Intermediary collector for groups (buildings, school parent societies, associations): post monthly charges, collect bank transfers via Revolut, hold funds during the week, and pay out to the committee bank every **Friday**.
+
+## How it works
+
+```mermaid
+flowchart LR
+  Operator -->|post charge| Members
+  Members -->|bank transfer| Revolut
+  Revolut -->|webhook| App
+  App -->|holds funds| Escrow
+  Escrow -->|Friday cron| CommitteeBank
+```
+
+1. Operator creates a **group** with members and a collection IBAN
+2. Operator posts a **charge** (maintenance, dues, event, etc.) — split equally, by area, or by custom weight
+3. Members pay by bank transfer with a unique **payment reference**
+4. Revolut webhook matches payments → balances update on the dashboard (10s polling)
+5. Every **Friday**, collected funds transfer to the group's **committee bank account**
 
 ## Project structure
 
@@ -20,7 +37,7 @@ PropertyManagementApp/
 1. Link the repo to Vercel: `vercel link`
 2. Add Neon Postgres: `vercel integration add neon`
 3. Pull env vars locally: `vercel env pull .env.local`
-4. Run migrations against your database:
+4. Run migrations:
 
 ```bash
 cd backend
@@ -42,7 +59,7 @@ python scripts/create_operator.py you@example.com your-password "Your Name"
 
 ```bash
 pip install -r requirements.txt
-copy ..\.env.local ..\.env   # or use .env.local at repo root
+copy ..\.env.local ..\.env
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -54,13 +71,7 @@ copy .env.example .env
 npm run dev
 ```
 
-Open http://localhost:5173 and sign in with your operator account.
-
-Alternatively, run the full stack as on Vercel:
-
-```bash
-vercel dev
-```
+Open http://localhost:5173 and sign in.
 
 ### 3. Required environment variables
 
@@ -69,52 +80,54 @@ vercel dev
 | `DATABASE_URL` | Neon Postgres connection string |
 | `JWT_SECRET` | Signs operator login tokens |
 | `CRON_SECRET` | Protects scheduled payout endpoint |
+| `REVOLUT_API_KEY` | Revolut Business API (webhooks + Friday payouts) |
+| `REVOLUT_SOURCE_ACCOUNT_ID` | Revolut account holding collected funds |
 
-See `.env.example` for Revolut, Twilio, and SendGrid options.
+See `.env.example` for Twilio and SendGrid options.
+
+## API routes
+
+Both prefixes work (hybrid rename):
+
+- `/api/groups/*` — preferred
+- `/api/buildings/*` — legacy alias
 
 ## Vercel deployment
 
-1. Push to GitHub and import the repo in [Vercel](https://vercel.com/new).
-2. Vercel detects the FastAPI entrypoint via `pyproject.toml` (`backend/server:app`).
-3. The build script compiles the React app into `public/` for static hosting.
-4. API routes live under `/api/*` (single FastAPI serverless function).
-5. Add env vars in the Vercel dashboard (or `vercel env add`).
-6. Enable the Neon integration for `DATABASE_URL`.
+1. Push to GitHub and import in [Vercel](https://vercel.com/new).
+2. API under `/api/*`; frontend static from `public/`.
+3. Enable Neon integration for `DATABASE_URL`.
 
-**Cron:** Weekly payout runs Fridays at 04:00 UTC via `vercel.json` → `GET /api/cron/weekly-payout`. Vercel sends `Authorization: Bearer <CRON_SECRET>` — set `CRON_SECRET` in project env.
+**Cron:** Weekly payout — `GET /api/cron/weekly-payout` Fridays 04:00 UTC (`vercel.json`). Set `CRON_SECRET`.
 
-**Webhooks:** Configure Revolut Business to POST to:
-
-```
-https://your-app.vercel.app/api/webhooks/revolut
-```
+**Webhooks:** Revolut Business → `https://your-app.vercel.app/api/webhooks/revolut`
 
 ## Payment reference format
 
-Owners pay with reference:
-
 ```
-{building_id}-{unit_id}-{YYYYMM}
+{group_id}-{member_id}-{YYYYMM}
 ```
 
-Example: `a1b2c3d4-....-e5f6....-202605`
+## Split methods
 
-## Payment method
+| Method | Use case |
+|--------|----------|
+| `by_area` | Buildings — charge by apartment m² |
+| `equal` | School societies — same amount per member |
+| `custom_weight` | Custom share weights per member |
 
-Owners pay monthly charges via **bank transfer** — IBAN + payment reference (or SEPA QR code). Revolut Business webhook matches incoming transfers.
+## Features
 
-## MVP features
-
-- Buildings & units CRUD
-- Expense distribution with preview wizard
-- Ledger per unit/month
-- Bank transfer payments via Revolut Business webhooks
-- Weekly automated payouts to committee BoC accounts
-- Revolut Business API integration
-- Twilio SMS + SendGrid email notifications
-- Dashboard polling updates (10s refresh)
-- QR payment codes per unit
+- Groups & members CRUD (buildings, schools, associations)
+- Flexible charge split (area / equal / weight)
+- Bank transfer collection via Revolut Business webhooks
+- **Held for payout** vs **paid to committee** tracking
+- Friday automated payouts to committee BoC
+- Committee bank setup in UI
+- SMS/email charge notices and payment receipts
+- Live dashboard polling (10s)
 
 ## Phase 2 (planned)
 
-AI invoice extraction, 6-level escalation cron, reserve fund, PDF reports, owner portal with signed links.
+- Owner portal (signed links — balance, QR, reference)
+- PDF reports (monthly summary, member statements)

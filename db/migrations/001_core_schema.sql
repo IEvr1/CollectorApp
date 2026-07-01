@@ -1,4 +1,4 @@
--- Core schema for Cyprus property management platform
+-- Core schema for CollectorApp
 
 create extension if not exists "pgcrypto";
 

@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.config import settings
 from app.db import serialize_row, serialize_rows
@@ -14,27 +15,47 @@ from app.models.schemas import (
     BuildingPayoutSummary,
     BuildingResponse,
     PayoutBatchResponse,
+    PayoutRunResponse,
 )
 from app.services.dates import first_of_month
 from app.services.payout import PayoutService
 
-router = APIRouter(prefix="/buildings", tags=["buildings"])
+router = APIRouter(tags=["buildings"])
+
+
+def _next_payout_label() -> str:
+    try:
+        tz = ZoneInfo(settings.payout_timezone)
+    except Exception:
+        tz = ZoneInfo("Asia/Nicosia")
+    now = datetime.now(tz)
+    days_ahead = (4 - now.weekday()) % 7
+    if days_ahead == 0 and now.weekday() != 4:
+        days_ahead = 7
+    next_friday = now.date() + timedelta(days=days_ahead)
+    return next_friday.isoformat()
 
 
 @router.post("", response_model=BuildingResponse)
 def create_building(body: BuildingCreate, db: DbDep, _: OperatorDep):
     row = db.execute(
         """
-        INSERT INTO buildings (name, address, virtual_iban, monthly_budget, reserve_fund_target)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO buildings (
+            name, address, virtual_iban, group_type, split_method,
+            payout_enabled, payout_iban, payout_recipient_name
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING *
         """,
         (
             body.name,
             body.address,
             body.virtual_iban,
-            float(body.monthly_budget),
-            float(body.reserve_fund_target),
+            body.group_type,
+            body.split_method,
+            body.payout_enabled,
+            body.payout_iban,
+            body.payout_recipient_name,
         ),
     ).fetchone()
     return serialize_row(row)
@@ -50,7 +71,7 @@ def list_buildings(db: DbDep, _: OperatorDep):
 def get_building(building_id: UUID, db: DbDep, _: OperatorDep):
     row = db.execute("SELECT * FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
     return serialize_row(row)
 
 
@@ -58,7 +79,22 @@ def get_building(building_id: UUID, db: DbDep, _: OperatorDep):
 def building_dashboard(building_id: UUID, db: DbDep, _: OperatorDep):
     building = db.execute("SELECT * FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not building:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    building_data = serialize_row(building)
+    payout_service = PayoutService(db)
+    pending_payout = payout_service.pending_amount(str(building_id))
+
+    last = db.execute(
+        """
+        SELECT * FROM payout_batches
+        WHERE building_id = %s AND status = 'completed'
+        ORDER BY scheduled_for DESC
+        LIMIT 1
+        """,
+        (str(building_id),),
+    ).fetchone()
+    last_batch = serialize_row(last) if last else None
 
     month = first_of_month().isoformat()
     units = db.execute(
@@ -102,9 +138,14 @@ def building_dashboard(building_id: UUID, db: DbDep, _: OperatorDep):
         )
 
     return BuildingDashboard(
-        building=serialize_row(building),
+        building=building_data,
         collected_this_month=collected,
         outstanding=outstanding,
+        pending_payout=pending_payout,
+        payout_enabled=bool(building_data.get("payout_enabled")),
+        next_payout_label=_next_payout_label(),
+        last_payout_amount=Decimal(str(last_batch["total_amount"])) if last_batch else None,
+        last_payout_date=last_batch["scheduled_for"] if last_batch else None,
         units_paid=paid_count,
         units_total=len(units),
         units=unit_rows,
@@ -170,7 +211,7 @@ def update_payout_config(
 ):
     exists = db.execute("SELECT id FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not exists:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
 
     updates = body.model_dump(exclude_unset=True)
     if not updates:
@@ -189,7 +230,7 @@ def update_payout_config(
 def building_payouts(building_id: UUID, db: DbDep, _: OperatorDep):
     exists = db.execute("SELECT id FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not exists:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
 
     rows = db.execute(
         """
@@ -207,7 +248,7 @@ def building_payouts(building_id: UUID, db: DbDep, _: OperatorDep):
 def building_payout_summary(building_id: UUID, db: DbDep, _: OperatorDep):
     building = db.execute("SELECT * FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
     if not building:
-        raise HTTPException(status_code=404, detail="Building not found")
+        raise HTTPException(status_code=404, detail="Group not found")
 
     service = PayoutService(db)
     pending = service.pending_amount(str(building_id))
@@ -227,5 +268,46 @@ def building_payout_summary(building_id: UUID, db: DbDep, _: OperatorDep):
         pending_amount=pending,
         minimum_payout=settings.payout_min_amount,
         payout_enabled=bool(building_data.get("payout_enabled")),
-        last_payout=serialize_row(last),
+        next_payout_label=_next_payout_label(),
+        last_payout=serialize_row(last) if last else None,
+    )
+
+
+@router.post("/{building_id}/payout/run", response_model=PayoutRunResponse)
+def run_building_payout(
+    building_id: UUID,
+    db: DbDep,
+    _: OperatorDep,
+    dry_run: bool = Query(False),
+    force: bool = Query(False),
+):
+    building = db.execute("SELECT * FROM buildings WHERE id = %s", (str(building_id),)).fetchone()
+    if not building:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    service = PayoutService(db)
+    now = datetime.now(service._tz())
+    scheduled_for = service.scheduled_for_date(when=now)
+
+    if not service.is_payout_day(when=now, force=force) and not dry_run and not force:
+        return PayoutRunResponse(
+            status="skipped",
+            reason="not_friday",
+            dry_run=dry_run,
+        )
+
+    result = service.run_building_payout(
+        serialize_row(building),
+        scheduled_for=scheduled_for,
+        dry_run=dry_run,
+    )
+    return PayoutRunResponse(
+        status=result.get("status", "unknown"),
+        dry_run=dry_run,
+        total_amount=result.get("total_amount"),
+        payment_count=result.get("payment_count"),
+        reference=result.get("reference"),
+        batch_id=result.get("batch_id"),
+        reason=result.get("reason"),
+        error=result.get("error"),
     )
