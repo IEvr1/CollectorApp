@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
-import { getAccessToken } from "@/lib/supabase";
+import { getAccessToken } from "@/lib/auth";
 import { HomePage } from "@/pages/HomePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { BuildingPage } from "@/pages/BuildingPage";

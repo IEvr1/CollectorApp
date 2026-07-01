@@ -1,44 +1,29 @@
-from functools import lru_cache
 from typing import Annotated
 
+import psycopg
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
-from supabase import Client, create_client
 
 from app.config import settings
+from app.db import get_db, serialize_row
 
 
-@lru_cache
-def get_supabase() -> Client:
-    if not settings.supabase_url or not settings.supabase_service_role_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Supabase not configured",
-        )
-    return create_client(settings.supabase_url, settings.supabase_service_role_key)
-
-
-SupabaseDep = Annotated[Client, Depends(get_supabase)]
+DbDep = Annotated[psycopg.Connection, Depends(get_db)]
 
 
 async def get_current_operator(
-    db: SupabaseDep,
+    db: DbDep,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
 
     token = authorization.removeprefix("Bearer ").strip()
-    if not settings.supabase_jwt_secret:
+    if not settings.jwt_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JWT not configured")
 
     try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
     except JWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
 
@@ -46,18 +31,30 @@ async def get_current_operator(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-    op = db.table("operators").select("*").eq("id", user_id).maybe_single().execute()
-    if not op.data:
+    row = db.execute(
+        "SELECT * FROM operators WHERE id = %s",
+        (user_id,),
+    ).fetchone()
+    if not row:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an operator")
 
-    return {"id": user_id, "email": op.data.get("email"), **op.data}
+    op = serialize_row(row)
+    return {"id": user_id, "email": op.get("email"), **op}
 
 
 OperatorDep = Annotated[dict, Depends(get_current_operator)]
 
 
-def verify_cron_secret(x_cron_secret: Annotated[str | None, Header()] = None) -> None:
-    if not settings.railway_cron_secret:
+def verify_cron_secret(
+    authorization: Annotated[str | None, Header()] = None,
+    x_cron_secret: Annotated[str | None, Header()] = None,
+) -> None:
+    """Accept Vercel Cron (`Authorization: Bearer …`) or manual `X-Cron-Secret` header."""
+    secret = settings.cron_secret
+    if not secret:
         return
-    if x_cron_secret != settings.railway_cron_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron secret")
+    if authorization == f"Bearer {secret}":
+        return
+    if x_cron_secret == secret:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron secret")

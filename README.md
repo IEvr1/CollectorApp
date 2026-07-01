@@ -1,78 +1,93 @@
 # Cyprus Property Management Platform
 
-Automation platform for Cyprus building management companies: expense distribution, Revolut payment matching, Twilio SMS + SendGrid email, operator dashboard with realtime ledger updates.
-
-## Plan
-
-The implementation plan lives at:
-
-`C:\Users\User\.cursor\plans\cyprus_property_platform_195e52b3.plan.md`
+Automation platform for Cyprus building management companies: expense distribution, Revolut payment matching, Twilio SMS + SendGrid email, operator dashboard with ledger updates.
 
 ## Project structure
 
 ```
 PropertyManagementApp/
-  backend/          FastAPI API
+  backend/          FastAPI API (Vercel serverless)
   frontend/         React + Vite + Tailwind operator UI
-  supabase/migrations/
+  db/migrations/    Neon Postgres schema
+  public/           Built frontend (generated at deploy)
+  scripts/build.py  Vercel build — compiles frontend into public/
 ```
 
 ## Setup
 
-### 1. Supabase
+### 1. Database (Neon via Vercel)
 
-1. Create a [Supabase](https://supabase.com) project.
-2. Run migrations in order in the SQL editor:
-   - `supabase/migrations/001_core_schema.sql`
-   - `supabase/migrations/002_operators_realtime.sql`
-   - `supabase/migrations/003_indexes.sql`
-   - `supabase/migrations/004_dual_payments.sql`
-   - `supabase/migrations/005_payouts.sql`
-   - `supabase/migrations/006_remove_merchant.sql`
-3. Enable Email auth under Authentication → Providers.
-4. Create an operator user, then insert into `operators`:
-
-```sql
-insert into operators (id, email, full_name)
-values ('YOUR_AUTH_USER_UUID', 'you@example.com', 'Your Name');
-```
-
-### 2. Backend
+1. Link the repo to Vercel: `vercel link`
+2. Add Neon Postgres: `vercel integration add neon`
+3. Pull env vars locally: `vercel env pull .env.local`
+4. Run migrations against your database:
 
 ```bash
 cd backend
 python -m venv .venv
 .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-copy ..\.env.example .env   # fill in values
+python scripts/migrate.py
+```
+
+5. Create an operator account:
+
+```bash
+python scripts/create_operator.py you@example.com your-password "Your Name"
+```
+
+### 2. Local development
+
+**Backend** (from `backend/`):
+
+```bash
+pip install -r requirements.txt
+copy ..\.env.local ..\.env   # or use .env.local at repo root
 uvicorn app.main:app --reload --port 8000
 ```
 
-Required env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`, `FRONTEND_URL`.
-
-Optional for notifications: `TWILIO_*`, `SENDGRID_*`.  
-Optional for payments: `REVOLUT_API_KEY`, `REVOLUT_WEBHOOK_SECRET`, `REVOLUT_SOURCE_ACCOUNT_ID` (Business API — bank transfers + weekly payouts).
-
-### 3. Frontend
+**Frontend** (from `frontend/`):
 
 ```bash
-cd frontend
 npm install
-```
-
-Create `frontend/.env`:
-
-```
-VITE_SUPABASE_URL=https://xxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_API_URL=http://localhost:8000
-```
-
-```bash
+copy .env.example .env
 npm run dev
 ```
 
 Open http://localhost:5173 and sign in with your operator account.
+
+Alternatively, run the full stack as on Vercel:
+
+```bash
+vercel dev
+```
+
+### 3. Required environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Neon Postgres connection string |
+| `JWT_SECRET` | Signs operator login tokens |
+| `CRON_SECRET` | Protects scheduled payout endpoint |
+
+See `.env.example` for Revolut, Twilio, and SendGrid options.
+
+## Vercel deployment
+
+1. Push to GitHub and import the repo in [Vercel](https://vercel.com/new).
+2. Vercel detects the FastAPI entrypoint via `pyproject.toml` (`backend/server:app`).
+3. The build script compiles the React app into `public/` for static hosting.
+4. API routes live under `/api/*` (single FastAPI serverless function).
+5. Add env vars in the Vercel dashboard (or `vercel env add`).
+6. Enable the Neon integration for `DATABASE_URL`.
+
+**Cron:** Weekly payout runs Fridays at 04:00 UTC via `vercel.json` → `GET /api/cron/weekly-payout`. Vercel sends `Authorization: Bearer <CRON_SECRET>` — set `CRON_SECRET` in project env.
+
+**Webhooks:** Configure Revolut Business to POST to:
+
+```
+https://your-app.vercel.app/api/webhooks/revolut
+```
 
 ## Payment reference format
 
@@ -88,18 +103,6 @@ Example: `a1b2c3d4-....-e5f6....-202605`
 
 Owners pay monthly charges via **bank transfer** — IBAN + payment reference (or SEPA QR code). Revolut Business webhook matches incoming transfers.
 
-## Revolut webhooks
-
-| Product | URL |
-|---------|-----|
-| Business API (bank transfers) | `POST https://your-api.railway.app/webhooks/revolut` |
-
-## Railway deployment
-
-Deploy `backend/` and `frontend/` as separate services. Set all env vars from `.env.example`. Schedule weekly payout cron:
-
-`GET /cron/weekly-payout` with header `X-Cron-Secret` (Fridays, or `?force=true` for testing).
-
 ## MVP features
 
 - Buildings & units CRUD
@@ -109,7 +112,7 @@ Deploy `backend/` and `frontend/` as separate services. Set all env vars from `.
 - Weekly automated payouts to committee BoC accounts
 - Revolut Business API integration
 - Twilio SMS + SendGrid email notifications
-- Realtime dashboard updates
+- Dashboard polling updates (10s refresh)
 - QR payment codes per unit
 
 ## Phase 2 (planned)

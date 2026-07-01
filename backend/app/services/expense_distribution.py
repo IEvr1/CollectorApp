@@ -2,8 +2,9 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from supabase import Client
+import psycopg
 
+from app.db import serialize_row
 from app.services.dates import first_of_month
 from app.services.notifications import NotificationService, format_amount
 from app.services.payment_instructions import build_charge_context
@@ -24,23 +25,30 @@ def compute_status(amount_due: Decimal, amount_paid: Decimal, due_date: date | N
 
 
 class ExpenseDistributionService:
-    def __init__(self, db: Client):
+    def __init__(self, db: psycopg.Connection):
         self.db = db
         self.notifications = NotificationService(db)
 
     def distribute(self, expense_id: str) -> dict:
-        expense = (
-            self.db.table("expenses").select("*").eq("id", expense_id).single().execute()
-        ).data
+        expense = self.db.execute(
+            "SELECT * FROM expenses WHERE id = %s",
+            (expense_id,),
+        ).fetchone()
         if not expense or not expense.get("approved", True):
             raise ValueError("Expense not found or not approved")
+        expense = serialize_row(expense)
 
-        building = (
-            self.db.table("buildings").select("*").eq("id", expense["building_id"]).single().execute()
-        ).data
-        units = (
-            self.db.table("units").select("*").eq("building_id", expense["building_id"]).execute()
-        ).data or []
+        building = self.db.execute(
+            "SELECT * FROM buildings WHERE id = %s",
+            (expense["building_id"],),
+        ).fetchone()
+        building = serialize_row(building)
+
+        units = self.db.execute(
+            "SELECT * FROM units WHERE building_id = %s",
+            (expense["building_id"],),
+        ).fetchall()
+        units = [serialize_row(u) for u in units]
 
         total_area = Decimal(str(building.get("total_area_m2") or 0))
         if total_area <= 0:
@@ -61,53 +69,50 @@ class ExpenseDistributionService:
             if charge <= 0:
                 continue
 
-            existing = (
-                self.db.table("ledger")
-                .select("*")
-                .eq("unit_id", unit["id"])
-                .eq("month", month.isoformat())
-                .eq("line_type", "common_expense")
-                .maybe_single()
-                .execute()
-            )
+            existing = self.db.execute(
+                """
+                SELECT * FROM ledger
+                WHERE unit_id = %s AND month = %s AND line_type = 'common_expense'
+                """,
+                (unit["id"], month.isoformat()),
+            ).fetchone()
 
-            if existing.data:
-                new_due = Decimal(str(existing.data["amount_due"])) + charge
-                amount_paid = Decimal(str(existing.data["amount_paid"]))
+            if existing:
+                existing = serialize_row(existing)
+                new_due = Decimal(str(existing["amount_due"])) + charge
+                amount_paid = Decimal(str(existing["amount_paid"]))
                 status = compute_status(new_due, amount_paid, due)
-                row = (
-                    self.db.table("ledger")
-                    .update(
-                        {
-                            "amount_due": float(new_due),
-                            "status": status,
-                            "due_date": due.isoformat(),
-                        }
-                    )
-                    .eq("id", existing.data["id"])
-                    .execute()
-                )
-                ledger = row.data[0] if row.data else existing.data
+                row = self.db.execute(
+                    """
+                    UPDATE ledger
+                    SET amount_due = %s, status = %s, due_date = %s
+                    WHERE id = %s
+                    RETURNING *
+                    """,
+                    (float(new_due), status, due.isoformat(), existing["id"]),
+                ).fetchone()
+                ledger = serialize_row(row) if row else existing
             else:
                 ref = build_reference(building["id"], unit["id"], month)
-                row = (
-                    self.db.table("ledger")
-                    .insert(
-                        {
-                            "unit_id": unit["id"],
-                            "building_id": building["id"],
-                            "month": month.isoformat(),
-                            "line_type": "common_expense",
-                            "amount_due": float(charge),
-                            "amount_paid": 0,
-                            "due_date": due.isoformat(),
-                            "payment_reference": ref,
-                            "status": "pending",
-                        }
+                row = self.db.execute(
+                    """
+                    INSERT INTO ledger (
+                        unit_id, building_id, month, line_type, amount_due,
+                        amount_paid, due_date, payment_reference, status
                     )
-                    .execute()
-                )
-                ledger = row.data[0]
+                    VALUES (%s, %s, %s, 'common_expense', %s, 0, %s, %s, 'pending')
+                    RETURNING *
+                    """,
+                    (
+                        unit["id"],
+                        building["id"],
+                        month.isoformat(),
+                        float(charge),
+                        due.isoformat(),
+                        ref,
+                    ),
+                ).fetchone()
+                ledger = serialize_row(row)
 
             month_label = month.strftime("%m/%Y")
             ref = ledger.get("payment_reference") or build_reference(

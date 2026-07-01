@@ -6,14 +6,15 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from supabase import Client
+import psycopg
 
 from app.config import settings
+from app.db import serialize_row
 from app.services.revolut_business import RevolutBusinessClient, RevolutBusinessError
 
 
 class PayoutService:
-    def __init__(self, db: Client):
+    def __init__(self, db: psycopg.Connection):
         self.db = db
         self.revolut = RevolutBusinessClient()
 
@@ -34,31 +35,30 @@ class PayoutService:
         return now.date()
 
     def _pending_payments(self, building_id: str) -> list[dict[str, Any]]:
-        rows = (
-            self.db.table("payments")
-            .select("id, amount, ledger_id, received_at, collected_at")
-            .eq("building_id", building_id)
-            .eq("matched", True)
-            .is_("paid_out_at", "null")
-            .order("received_at")
-            .execute()
-        )
-        return rows.data or []
+        rows = self.db.execute(
+            """
+            SELECT id, amount, ledger_id, received_at, collected_at
+            FROM payments
+            WHERE building_id = %s AND matched = true AND paid_out_at IS NULL
+            ORDER BY received_at
+            """,
+            (building_id,),
+        ).fetchall()
+        return [serialize_row(r) for r in rows]
 
     def pending_amount(self, building_id: str) -> Decimal:
         payments = self._pending_payments(building_id)
         return sum(Decimal(str(p["amount"])) for p in payments)
 
     def _existing_batch(self, building_id: str, scheduled_for: date) -> dict | None:
-        row = (
-            self.db.table("payout_batches")
-            .select("*")
-            .eq("building_id", building_id)
-            .eq("scheduled_for", scheduled_for.isoformat())
-            .maybe_single()
-            .execute()
-        )
-        return row.data
+        row = self.db.execute(
+            """
+            SELECT * FROM payout_batches
+            WHERE building_id = %s AND scheduled_for = %s
+            """,
+            (building_id, scheduled_for.isoformat()),
+        ).fetchone()
+        return serialize_row(row) if row else None
 
     def _week_reference(self, scheduled_for: date, building_id: str) -> str:
         year, week, _ = scheduled_for.isocalendar()
@@ -74,32 +74,35 @@ class PayoutService:
         if not payment_ids:
             return
 
-        self.db.table("payments").update(
-            {"paid_out_at": paid_out_at, "payout_batch_id": batch_id}
-        ).in_("id", payment_ids).execute()
+        self.db.execute(
+            """
+            UPDATE payments
+            SET paid_out_at = %s, payout_batch_id = %s
+            WHERE id = ANY(%s)
+            """,
+            (paid_out_at, batch_id, payment_ids),
+        )
 
     def _sync_ledger_payout_status(self, ledger_ids: set[str], batch_id: str, paid_out_at: str) -> None:
         for ledger_id in ledger_ids:
             if not ledger_id:
                 continue
 
-            ledger = (
-                self.db.table("ledger")
-                .select("id, amount_paid")
-                .eq("id", ledger_id)
-                .maybe_single()
-                .execute()
-            )
-            if not ledger.data:
+            ledger = self.db.execute(
+                "SELECT id, amount_paid FROM ledger WHERE id = %s",
+                (ledger_id,),
+            ).fetchone()
+            if not ledger:
                 continue
 
-            payments = (
-                self.db.table("payments")
-                .select("id, amount, paid_out_at, matched")
-                .eq("ledger_id", ledger_id)
-                .eq("matched", True)
-                .execute()
-            ).data or []
+            payments = self.db.execute(
+                """
+                SELECT id, amount, paid_out_at, matched
+                FROM payments
+                WHERE ledger_id = %s AND matched = true
+                """,
+                (ledger_id,),
+            ).fetchall()
 
             if not payments:
                 continue
@@ -108,14 +111,16 @@ class PayoutService:
                 continue
 
             paid_out_total = sum(Decimal(str(p["amount"])) for p in payments)
-            amount_paid = Decimal(str(ledger.data["amount_paid"]))
+            amount_paid = Decimal(str(ledger["amount_paid"]))
             if paid_out_total + Decimal("0.01") >= amount_paid:
-                self.db.table("ledger").update(
-                    {
-                        "paid_out_at": paid_out_at,
-                        "payout_batch_id": batch_id,
-                    }
-                ).eq("id", ledger_id).execute()
+                self.db.execute(
+                    """
+                    UPDATE ledger
+                    SET paid_out_at = %s, payout_batch_id = %s
+                    WHERE id = %s
+                    """,
+                    (paid_out_at, batch_id, ledger_id),
+                )
 
     def run_building_payout(
         self,
@@ -175,29 +180,43 @@ class PayoutService:
         batch_id = str(uuid4())
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        self.db.table("payout_batches").upsert(
-            {
-                "id": batch_id,
-                "building_id": building_id,
-                "scheduled_for": scheduled_for.isoformat(),
-                "status": "processing",
-                "total_amount": float(total),
-                "payment_count": len(payments),
-                "reference": reference,
-                "revolut_request_id": batch_id,
-            },
-            on_conflict="building_id,scheduled_for",
-        ).execute()
+        self.db.execute(
+            """
+            INSERT INTO payout_batches (
+                id, building_id, scheduled_for, status, total_amount,
+                payment_count, reference, revolut_request_id
+            )
+            VALUES (%s, %s, %s, 'processing', %s, %s, %s, %s)
+            ON CONFLICT (building_id, scheduled_for) DO UPDATE SET
+                status = EXCLUDED.status,
+                total_amount = EXCLUDED.total_amount,
+                payment_count = EXCLUDED.payment_count,
+                reference = EXCLUDED.reference,
+                revolut_request_id = EXCLUDED.revolut_request_id
+            """,
+            (
+                batch_id,
+                building_id,
+                scheduled_for.isoformat(),
+                float(total),
+                len(payments),
+                reference,
+                batch_id,
+            ),
+        )
 
         source_account_id = settings.revolut_source_account_id
         if not source_account_id:
-            self.db.table("payout_batches").update(
-                {
-                    "status": "failed",
-                    "error_message": "REVOLUT_SOURCE_ACCOUNT_ID not configured",
-                    "completed_at": now_iso,
-                }
-            ).eq("id", batch_id).execute()
+            self.db.execute(
+                """
+                UPDATE payout_batches
+                SET status = 'failed',
+                    error_message = 'REVOLUT_SOURCE_ACCOUNT_ID not configured',
+                    completed_at = %s
+                WHERE id = %s
+                """,
+                (now_iso, batch_id),
+            )
             return {
                 "building_id": building_id,
                 "status": "failed",
@@ -206,13 +225,16 @@ class PayoutService:
             }
 
         if not self.revolut.configured:
-            self.db.table("payout_batches").update(
-                {
-                    "status": "failed",
-                    "error_message": "REVOLUT_API_KEY not configured",
-                    "completed_at": now_iso,
-                }
-            ).eq("id", batch_id).execute()
+            self.db.execute(
+                """
+                UPDATE payout_batches
+                SET status = 'failed',
+                    error_message = 'REVOLUT_API_KEY not configured',
+                    completed_at = %s
+                WHERE id = %s
+                """,
+                (now_iso, batch_id),
+            )
             return {
                 "building_id": building_id,
                 "status": "failed",
@@ -230,13 +252,14 @@ class PayoutService:
                 reference=reference,
             )
         except RevolutBusinessError as exc:
-            self.db.table("payout_batches").update(
-                {
-                    "status": "failed",
-                    "error_message": str(exc)[:500],
-                    "completed_at": now_iso,
-                }
-            ).eq("id", batch_id).execute()
+            self.db.execute(
+                """
+                UPDATE payout_batches
+                SET status = 'failed', error_message = %s, completed_at = %s
+                WHERE id = %s
+                """,
+                (str(exc)[:500], now_iso, batch_id),
+            )
             return {
                 "building_id": building_id,
                 "status": "failed",
@@ -253,13 +276,14 @@ class PayoutService:
         )
         self._sync_ledger_payout_status(ledger_ids, batch_id, now_iso)
 
-        self.db.table("payout_batches").update(
-            {
-                "status": "completed",
-                "revolut_transaction_id": tx_id,
-                "completed_at": now_iso,
-            }
-        ).eq("id", batch_id).execute()
+        self.db.execute(
+            """
+            UPDATE payout_batches
+            SET status = 'completed', revolut_transaction_id = %s, completed_at = %s
+            WHERE id = %s
+            """,
+            (tx_id, now_iso, batch_id),
+        )
 
         return {
             "building_id": building_id,
@@ -288,15 +312,15 @@ class PayoutService:
                 "timezone": settings.payout_timezone,
             }
 
-        buildings = (
-            self.db.table("buildings")
-            .select(
-                "id, name, payout_enabled, revolut_counterparty_id, "
-                "revolut_counterparty_account_id, payout_iban"
-            )
-            .eq("payout_enabled", True)
-            .execute()
-        ).data or []
+        rows = self.db.execute(
+            """
+            SELECT id, name, payout_enabled, revolut_counterparty_id,
+                   revolut_counterparty_account_id, payout_iban
+            FROM buildings
+            WHERE payout_enabled = true
+            """
+        ).fetchall()
+        buildings = [serialize_row(r) for r in rows]
 
         results = [
             self.run_building_payout(building, scheduled_for=scheduled_for, dry_run=dry_run)

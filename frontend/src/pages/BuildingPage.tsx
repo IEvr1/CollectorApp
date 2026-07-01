@@ -3,7 +3,6 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api, type BuildingDashboard, type Expense } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
 import { UnitCard } from "@/components/units/UnitCard";
 import { UnitDrawer } from "@/components/units/UnitDrawer";
 import { ExpenseWizard } from "@/components/expenses/ExpenseWizard";
@@ -47,27 +46,11 @@ export function BuildingPage() {
   }, [load]);
 
   useEffect(() => {
-    const client = supabase;
-    if (!client || !id) return;
-    const channel = client
-      .channel(`building-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ledger", filter: `building_id=eq.${id}` },
-        (payload) => {
-          load();
-          const unitId = (payload.new as { unit_id?: string })?.unit_id;
-          if (unitId) {
-            setHighlightId(unitId);
-            toast.success("Ενημέρωση κατάστασης — νέα πληρωμή");
-            setTimeout(() => setHighlightId(null), 3000);
-          }
-        }
-      )
-      .subscribe();
-    return () => {
-      client.removeChannel(channel);
-    };
+    if (!id) return;
+    const interval = setInterval(() => {
+      load().catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
   }, [id, load]);
 
   if (!data) {

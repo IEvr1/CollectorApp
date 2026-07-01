@@ -1,11 +1,11 @@
 import base64
 import io
 from decimal import Decimal
-from uuid import UUID
 
+import psycopg
 import qrcode
-from supabase import Client
 
+from app.db import serialize_row
 from app.services.dates import first_of_month
 from app.services.payment_reference import build_reference
 
@@ -21,15 +21,29 @@ def generate_qr_png(data: str) -> bytes:
 
 
 class QRPaymentService:
-    def __init__(self, db: Client):
+    def __init__(self, db: psycopg.Connection):
         self.db = db
 
     def get_payment_qr(self, unit_id: str, month: str | None = None) -> dict:
-        unit = self.db.table("units").select("*, buildings(*)").eq("id", unit_id).single().execute().data
-        if not unit:
+        row = self.db.execute(
+            """
+            SELECT u.*, b.id AS b_id, b.name AS b_name, b.virtual_iban AS b_virtual_iban
+            FROM units u
+            JOIN buildings b ON b.id = u.building_id
+            WHERE u.id = %s
+            """,
+            (unit_id,),
+        ).fetchone()
+        if not row:
             raise ValueError("Unit not found")
 
-        building = unit.get("buildings") or {}
+        unit = serialize_row(row)
+        building = {
+            "id": unit.pop("b_id"),
+            "name": unit.pop("b_name"),
+            "virtual_iban": unit.pop("b_virtual_iban"),
+        }
+
         m = first_of_month()
         if month:
             from datetime import date
@@ -38,18 +52,17 @@ class QRPaymentService:
 
         ref = build_reference(unit["building_id"], unit["id"], m)
 
-        ledger = (
-            self.db.table("ledger")
-            .select("amount_due, amount_paid, balance")
-            .eq("unit_id", unit_id)
-            .eq("month", m.isoformat())
-            .eq("line_type", "common_expense")
-            .maybe_single()
-            .execute()
-        )
+        ledger = self.db.execute(
+            """
+            SELECT amount_due, amount_paid, balance FROM ledger
+            WHERE unit_id = %s AND month = %s AND line_type = 'common_expense'
+            """,
+            (unit_id, m.isoformat()),
+        ).fetchone()
+
         balance = Decimal("0")
-        if ledger.data:
-            balance = Decimal(str(ledger.data.get("balance") or 0))
+        if ledger:
+            balance = Decimal(str(ledger.get("balance") or 0))
 
         iban = building.get("virtual_iban") or ""
         epc = "\n".join(

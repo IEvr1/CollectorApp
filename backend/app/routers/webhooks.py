@@ -1,12 +1,11 @@
 import hashlib
-import hashlib
 import json
 from decimal import Decimal
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.config import settings
-from app.deps import SupabaseDep
+from app.deps import DbDep
 from app.services.payment_matching import PaymentMatchingService
 from app.services.revolut_signature import verify_business_webhook
 
@@ -27,7 +26,7 @@ def _parse_amount(payload: dict) -> Decimal:
 @router.post("/revolut")
 async def revolut_business_webhook(
     request: Request,
-    db: SupabaseDep,
+    db: DbDep,
     revolut_signature: str | None = Header(None, alias="Revolut-Signature"),
 ):
     body = await request.body()

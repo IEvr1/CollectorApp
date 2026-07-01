@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Building2 } from "lucide-react";
-import { supabase, setSession } from "@/lib/supabase";
+import { api, type LoginResponse } from "@/lib/api";
+import { setSession } from "@/lib/auth";
 import { t } from "@/lib/i18n";
 
 export function LoginPage() {
@@ -13,21 +14,17 @@ export function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) {
-      setError("Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
-      return;
-    }
     setLoading(true);
     setError("");
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    if (authError || !data.session) {
-      setError(authError?.message ?? "Login failed");
+    try {
+      const data = await api.post<LoginResponse>("/auth/login", { email, password });
+      setSession(data.access_token);
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
       setLoading(false);
-      return;
     }
-    setSession(data.session.access_token, data.session.refresh_token);
-    navigate("/");
-    setLoading(false);
   };
 
   return (

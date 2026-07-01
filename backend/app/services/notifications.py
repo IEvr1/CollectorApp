@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from supabase import Client
+import psycopg
 
 from app.config import settings
 from app.services.phone import normalize_cyprus_phone
@@ -22,7 +22,7 @@ def format_amount(amount: Decimal | float) -> str:
 
 
 class NotificationService:
-    def __init__(self, db: Client):
+    def __init__(self, db: psycopg.Connection):
         self.db = db
 
     def _log(
@@ -38,34 +38,40 @@ class NotificationService:
         twilio_sid: str | None = None,
         sendgrid_id: str | None = None,
     ) -> None:
-        row: dict[str, Any] = {
-            "unit_id": unit_id,
-            "ledger_id": ledger_id,
-            "channel": channel,
-            "template_key": template_key,
-            "recipient": recipient,
-            "status": status,
-            "error_message": error_message,
-            "twilio_message_sid": twilio_sid,
-            "sendgrid_message_id": sendgrid_id,
-        }
         try:
-            self.db.table("notification_log").insert(row).execute()
+            self.db.execute(
+                """
+                INSERT INTO notification_log (
+                    unit_id, ledger_id, channel, template_key, recipient,
+                    status, error_message, twilio_message_sid, sendgrid_message_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    unit_id,
+                    ledger_id,
+                    channel,
+                    template_key,
+                    recipient,
+                    status,
+                    error_message,
+                    twilio_sid,
+                    sendgrid_id,
+                ),
+            )
         except Exception:
             pass
 
     def _already_sent(self, ledger_id: str, template_key: str, channel: str) -> bool:
-        r = (
-            self.db.table("notification_log")
-            .select("id")
-            .eq("ledger_id", ledger_id)
-            .eq("template_key", template_key)
-            .eq("channel", channel)
-            .eq("status", "sent")
-            .limit(1)
-            .execute()
-        )
-        return bool(r.data)
+        row = self.db.execute(
+            """
+            SELECT id FROM notification_log
+            WHERE ledger_id = %s AND template_key = %s AND channel = %s AND status = 'sent'
+            LIMIT 1
+            """,
+            (ledger_id, template_key, channel),
+        ).fetchone()
+        return row is not None
 
     def send_sms(
         self,

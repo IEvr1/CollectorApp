@@ -1,4 +1,4 @@
-import { getAccessToken } from "./supabase";
+import { getAccessToken } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -66,4 +66,9 @@ export interface Expense {
   category: string;
   amount: number;
   vendor?: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
 }

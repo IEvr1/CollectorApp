@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { Building2, LogOut, Globe } from "lucide-react";
-import { clearSession } from "@/lib/supabase";
+import { clearSession } from "@/lib/auth";
 import { getLocale, setLocale, t, type Locale } from "@/lib/i18n";
 
 export function AppShell() {
