@@ -14,3 +14,5 @@ public/
 .idea/
 .vscode/
 revolut-certs/
+.vercel
+.env*
