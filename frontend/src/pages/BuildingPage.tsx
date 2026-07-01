@@ -278,7 +278,6 @@ function PaymentsTab({ buildingId }: { buildingId: string }) {
       amount: number;
       received_at: string;
       matched: boolean;
-      payment_method?: string;
       units?: { unit_number: string };
     }[]
   >([]);
@@ -293,9 +292,6 @@ function PaymentsTab({ buildingId }: { buildingId: string }) {
         <li key={p.id} className="flex justify-between rounded-lg border bg-white px-4 py-3 text-sm">
           <span>
             {new Date(p.received_at).toLocaleString("el-CY")} — Διαμ. {p.units?.unit_number ?? "?"}
-            <span className="ml-2 text-slate-400">
-              {p.payment_method === "payment_link" ? t("paymentMethodLink") : t("paymentMethodBank")}
-            </span>
             {p.matched ? " ✓" : " (unmatched)"}
           </span>
           <span className="font-medium">€{Number(p.amount).toFixed(2)}</span>
